@@ -2,6 +2,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "./schema";
 import { runMigrations } from "./migrations";
+import { importFromDatabase } from "./import";
 
 const { Pool } = pg;
 
@@ -36,9 +37,16 @@ export const db = drizzle(pool, { schema });
  */
 export const migrationsReady: Promise<void> = process.env.DB_AUTO_MIGRATE === "0"
   ? Promise.resolve()
-  : runMigrations(pool, (message) => console.log(message));
+  : runMigrations(pool, (message) => console.log(message)).then(async () => {
+    // Moving from another server (e.g. Replit): copy its data once into an empty database.
+    const source = process.env.IMPORT_FROM_DATABASE_URL?.trim();
+    if (source) await importFromDatabase(source, pool, (message) => console.log(message));
+  });
 // Avoid an unhandled rejection before someone awaits it; awaiting still rethrows.
 migrationsReady.catch(() => undefined);
 
 export { runMigrations, migrations } from "./migrations";
+export { importFromDatabase } from "./import";
+/** Separate pool for maintenance tasks/tests (e.g. another database). */
+export const createPool = (connectionString: string) => new Pool({ connectionString, max: 2 });
 export * from "./schema";
