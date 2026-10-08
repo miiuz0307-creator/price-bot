@@ -1,0 +1,27 @@
+name: deps-snapshot
+
+# Developer helper: installs workspace dependencies (without the Expo app) and
+# uploads them as an artifact, for offline development environments.
+on:
+  push:
+    branches: ["tooling/deps"]
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: pnpm config set node-linker isolated && pnpm install --frozen-lockfile --filter "./lib/**" --filter "@workspace/api-server..." --filter "@workspace/price-bot..." --filter "@workspace/scripts"
+      - run: tar --zstd -cf deps.tar.zst $(find . -name node_modules -type d -prune -not -path "*/node_modules/*/node_modules")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deps
+          path: deps.tar.zst
+          retention-days: 3
