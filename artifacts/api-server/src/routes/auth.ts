@@ -11,6 +11,11 @@ import {
 } from "drizzle-orm";
 import {
   CreateAdminBody,
+  LoginWithPinBody,
+  RequestLoginCodeBody,
+  RequestLoginCodeResponse,
+  VerifyLoginCodeBody,
+  VerifyLoginCodeResponse,
   CreateAdminResponse,
   CreateAbbreviationBody,
   CreateAbbreviationResponse,
@@ -76,14 +81,19 @@ import { formatBillingCalculation, parseBillingAmount } from "../services/billin
 import { logger } from "../lib/logger";
 import { formatSurgePrice, isSurgeAboveCatalog, isSurgeActiveAt, matchSurgeProduct, matchesSurgeDirection, parseSurgeQuotes, sortSurgeOffers, surgeDirectionKey, surgeEffectiveExpiry, surgeLifetimeMs } from "../services/surge-pricing";
 
-import { sessionCookieName, sessionLifetimeMs, scrypt, encodeSession, readSession, hashCode, verifyCode, validCode, loginKeys, loginRetryAfterSeconds, recordLoginFailure, rejectIfLoginBlocked, loginFailures, sendSession, requireAdmin, requireOwner, type AuthAdmin } from "../auth/admin-auth";
+import { sessionCookieName, sessionLifetimeMs, scrypt, hashCode, verifyCode, validCode, loginKeys, loginRetryAfterSeconds, recordLoginFailure, rejectIfLoginBlocked, loginFailures, sendSession, endCurrentSession, revokeAllSessions, requireAdmin, requireOwner, requirePermission, hasPermission, effectivePermissions, isPermission, allPermissions, workspaceId, type Permission, type AuthAdmin } from "../auth/admin-auth";
 import { normalizePhone, normalizeIdentifier } from "../lib/identifiers";
 import { findClosestProduct } from "../bot/search";
 import { messageCredit, messageHeader, formatProductResponse, formatHourlyPricingResponse, formatExtrasResponse } from "../bot/replies";
 import { normalizeCurrency, productDto, adminDto, targetDto, lookupRequestDto } from "./dto";
 import { primaryOwnerPhone, primaryOwnerLabel, ownerBootstrapAllowed, getOrCreateOwnerAdmin } from "../services/owner";
 
+import { audit } from "../services/audit";
+import { findUserByIdentifier, requestLoginCode, verifyLoginCode } from "../services/login-codes";
+
 const router: IRouter = Router();
+
+const unknownCodeMessage = "קוד שגוי או שפג תוקפו. בקשו קוד חדש.";
 
 router.get("/auth/admins", async (_req, res, next) => {
   try {
@@ -120,12 +130,30 @@ router.post("/auth/bootstrap", async (req, res, next) => {
       res.status(403).json({ error: "הגדרת קוד הבעלים אינה זמינה" });
       return;
     }
-    sendSession(res, updated);
+    await sendSession(req, res, updated, "bootstrap");
+    await audit(req, "auth.owner_setup", { type: "user", id: updated.id }, {}, updated.id);
     res.json(BootstrapOwnerCodeResponse.parse({ admin: adminDto(updated) }));
   } catch (error) {
     next(error);
   }
 });
+
+/** Shared PIN check for both login forms (pick-from-list and phone/email). */
+async function pinLogin(req: import("express").Request, res: import("express").Response, admin: AuthAdmin | null, adminIdForLimits: number | undefined, code: string) {
+  const keys = loginKeys(req, adminIdForLimits);
+  if (rejectIfLoginBlocked(res, keys)) return;
+  if (!admin || !admin.active || !admin.codeHash || !(await verifyCode(code, admin.codeHash))) {
+    recordLoginFailure(keys);
+    logger.warn({ adminId: adminIdForLimits, ip: req.ip }, "Failed administrator login");
+    if (admin) await audit(req, "auth.login_failed", { type: "user", id: admin.id }, { method: "pin" }, admin.id);
+    res.status(401).json({ error: "קוד אישי שגוי או גישה לא פעילה" });
+    return;
+  }
+  for (const { key } of keys) loginFailures.delete(key);
+  await sendSession(req, res, admin, "pin");
+  await audit(req, "auth.login", { type: "user", id: admin.id }, { method: "pin" }, admin.id);
+  res.json(LoginAdminResponse.parse({ admin: adminDto(admin) }));
+}
 
 router.post("/auth/login", async (req, res, next) => {
   try {
@@ -134,18 +162,62 @@ router.post("/auth/login", async (req, res, next) => {
       res.status(400).json({ error: "הקוד חייב להכיל 4 עד 8 ספרות" });
       return;
     }
-    const keys = loginKeys(req, data.adminId);
-    if (rejectIfLoginBlocked(res, keys)) return;
     const [admin] = await db.select().from(priceBotAdmins).where(and(eq(priceBotAdmins.id, data.adminId), eq(priceBotAdmins.active, true)));
-    if (!admin || !admin.codeHash || !(await verifyCode(data.code, admin.codeHash))) {
+    await pinLogin(req, res, admin ?? null, data.adminId, data.code);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/auth/pin", async (req, res, next) => {
+  try {
+    const data = LoginWithPinBody.parse(req.body);
+    const admin = await findUserByIdentifier(data.identifier);
+    await pinLogin(req, res, admin, admin?.id, data.code);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/auth/code/request", async (req, res, next) => {
+  try {
+    const data = RequestLoginCodeBody.parse(req.body);
+    // Per-address throttle shared with PIN failures, so the endpoint cannot be used to spam phones.
+    const keys = loginKeys(req);
+    if (rejectIfLoginBlocked(res, keys)) return;
+    const outcome = await requestLoginCode(data.identifier);
+    if (outcome.kind === "throttled") {
+      res.status(429).json({ error: "נשלחו כבר כמה קודים. נסו שוב בעוד כמה דקות." });
+      return;
+    }
+    if (outcome.kind === "undeliverable") {
+      res.status(503).json({ error: "לא ניתן לשלוח כרגע קוד ב־WhatsApp (אין חיבור פעיל). היכנסו עם הקוד האישי או פנו לבעל המערכת." });
+      return;
+    }
+    if (outcome.kind === "unknown") recordLoginFailure(keys);
+    // Same answer whether or not the user exists, so the form cannot list members.
+    res.json(RequestLoginCodeResponse.parse({ sent: true, destination: outcome.kind === "sent" ? outcome.destination : null }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/auth/code/verify", async (req, res, next) => {
+  try {
+    const data = VerifyLoginCodeBody.parse(req.body);
+    const keys = loginKeys(req);
+    if (rejectIfLoginBlocked(res, keys)) return;
+    const outcome = await verifyLoginCode(data.identifier, data.code);
+    if (outcome.kind !== "ok") {
       recordLoginFailure(keys);
-      logger.warn({ adminId: data.adminId, ip: req.ip }, "Failed administrator login");
-      res.status(401).json({ error: "קוד אישי שגוי או גישה לא פעילה" });
+      if (outcome.userId) await audit(req, "auth.login_failed", { type: "user", id: outcome.userId }, { method: "whatsapp" }, outcome.userId);
+      res.status(401).json({ error: unknownCodeMessage });
       return;
     }
     for (const { key } of keys) loginFailures.delete(key);
-    sendSession(res, admin);
-    res.json(LoginAdminResponse.parse({ admin: adminDto(admin) }));
+    await sendSession(req, res, outcome.user, "whatsapp");
+    await audit(req, "auth.login", { type: "user", id: outcome.user.id }, { method: "whatsapp" }, outcome.user.id);
+    res.json(VerifyLoginCodeResponse.parse({ admin: adminDto(outcome.user) }));
   } catch (error) {
     next(error);
   }
@@ -155,9 +227,13 @@ router.get("/auth/session", requireAdmin, (req, res) => {
   res.json(GetCurrentSessionResponse.parse({ admin: adminDto(req.authAdmin!) }));
 });
 
-router.post("/auth/logout", requireAdmin, (_req, res) => {
-  res.clearCookie(sessionCookieName, { path: "/" });
-  res.status(204).end();
+router.post("/auth/logout", requireAdmin, async (req, res, next) => {
+  try {
+    await endCurrentSession(req, res);
+    res.status(204).end();
+  } catch (error) {
+    next(error);
+  }
 });
 
 export default router;

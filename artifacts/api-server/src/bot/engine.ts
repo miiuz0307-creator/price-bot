@@ -2,6 +2,7 @@ import { Router, type IRouter, type RequestHandler } from "express";
 import { createHmac, randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import {
+  or,
   and,
   desc,
   eq,
@@ -77,11 +78,12 @@ import { formatBillingCalculation, parseBillingAmount } from "../services/billin
 import { logger } from "../lib/logger";
 import { formatSurgePrice, isSurgeAboveCatalog, isSurgeActiveAt, matchSurgeProduct, matchesSurgeDirection, parseSurgeQuotes, sortSurgeOffers, surgeDirectionKey, surgeEffectiveExpiry, surgeLifetimeMs } from "../services/surge-pricing";
 
-import { sessionCookieName, sessionLifetimeMs, scrypt, encodeSession, readSession, hashCode, verifyCode, validCode, loginKeys, loginRetryAfterSeconds, recordLoginFailure, rejectIfLoginBlocked, loginFailures, sendSession, requireAdmin, requireOwner, type AuthAdmin } from "../auth/admin-auth";
+import { sessionCookieName, sessionLifetimeMs, scrypt, hashCode, verifyCode, validCode, loginKeys, loginRetryAfterSeconds, recordLoginFailure, rejectIfLoginBlocked, loginFailures, sendSession, endCurrentSession, revokeAllSessions, requireAdmin, requireOwner, requirePermission, hasPermission, effectivePermissions, isPermission, allPermissions, workspaceId, type Permission, type AuthAdmin } from "../auth/admin-auth";
 import { normalizePhone, normalizeIdentifier } from "../lib/identifiers";
 import { findClosestProduct } from "../bot/search";
 import { messageCredit, messageHeader, formatProductResponse, formatHourlyPricingResponse, formatExtrasResponse } from "../bot/replies";
 import { normalizeCurrency, productDto, adminDto, targetDto, lookupRequestDto } from "../routes/dto";
+import { audit } from "../services/audit";
 import { primaryOwnerPhone, primaryOwnerLabel, ownerBootstrapAllowed, getOrCreateOwnerAdmin } from "../services/owner";
 
 /**
@@ -104,6 +106,16 @@ export function catalogPlaceNames(
     }),
     ...abbreviations.map((row) => row.shortcut),
   ];
+}
+
+/**
+ * Active users who work in this WhatsApp workspace: its owner plus anyone it is
+ * shared with. Management commands and missing-price alerts stay inside it
+ * (before, every manager in the system received every workspace's alerts).
+ */
+async function workspaceMembers(adminId: number) {
+  return db.select({ phone: priceBotAdmins.phone }).from(priceBotAdmins)
+    .where(and(eq(priceBotAdmins.active, true), or(eq(priceBotAdmins.id, adminId), eq(priceBotAdmins.whatsappOwnerId, adminId))));
 }
 
 export async function captureSurgeQuote({ adminId, chatId, body, isGroup, sentAt }: IncomingWhatsAppMessage) {
@@ -198,7 +210,7 @@ export async function processPriceBotMessage({
   if (!target) {
     responseText = "הבוט אינו פעיל בשיחה זו.";
   } else if (message === "ניהול") {
-    const admins = await db.select({ phone: priceBotAdmins.phone }).from(priceBotAdmins).where(eq(priceBotAdmins.active, true));
+    const admins = await workspaceMembers(adminId);
     const senderIsAdmin = admins.some((row) => normalizePhone(row.phone) === normalizePhone(from));
     responseText = senderIsAdmin ? "הגישה לממשק הניהול מאושרת. פתח/י את קישור הניהול המאובטח שלך." : "אין הרשאת ניהול למספר זה.";
     matched = senderIsAdmin;
@@ -300,7 +312,7 @@ export async function processPriceBotMessage({
   await db.insert(priceBotLookups).values({ adminId, from, body, matched, estimate });
   if (target && notifyAdmins && !matched && !estimate && groupPriceQuery) {
     const notification = `📍 *בקשת מחיר ללא מחיר במחירון*\nמסלול: ${body.trim()}\nמאת: ${from}\n${localRouteWithoutPrice ? "נסיעה בתוך העיר — לא נשלחה הערכת מפות." : "לא נשלחה הערכת מחיר."}\nהבקשה ממתינה באתר הניהול.`;
-    void db.select({ phone: priceBotAdmins.phone }).from(priceBotAdmins).where(eq(priceBotAdmins.active, true))
+    void workspaceMembers(adminId)
       .then((admins) => Promise.all(admins.map((manager) =>
         whatsappWeb.sendMessageToPhone(adminId, manager.phone, notification),
       ))).then((delivered) => {
@@ -311,6 +323,17 @@ export async function processPriceBotMessage({
   }
   return { matched, responseText, shouldReply: Boolean(target) };
 }
+
+// Connection problems and changes go to the activity log; the owner sees them as alerts.
+whatsappWeb.onEvent((event) => {
+  const action = {
+    connected: "whatsapp.connected", disconnected: "whatsapp.disconnected", logged_out: "whatsapp.logged_out",
+    replaced: "whatsapp.replaced", code_expired: "whatsapp.code_expired", error: "whatsapp.error",
+  }[event.type];
+  void audit(null, action, { type: "workspace", id: event.adminId }, {
+    ...(event.detail ? { detail: event.detail } : {}), ...(event.phoneNumber ? { phoneNumber: event.phoneNumber } : {}),
+  }, null);
+});
 
 whatsappWeb.registerMessageHandler(async (message) => {
   if (message.isGroup) await captureSurgeQuote(message);
@@ -335,6 +358,6 @@ export const priceBotReady: Promise<void> = (async () => {
       logger.warn("OWNER_INITIAL_CODE must be 4-8 digits; ignored");
     }
   }
-  const admins = await db.select().from(priceBotAdmins).where(eq(priceBotAdmins.active, true));
+  const admins = await db.select().from(priceBotAdmins).where(and(eq(priceBotAdmins.active, true), isNull(priceBotAdmins.whatsappOwnerId)));
   await Promise.all(admins.map((admin) => whatsappWeb.getStatus(admin.id, admin.id === owner.id)));
 })().catch((error) => logger.error({ err: error }, "Unable to initialize administrator WhatsApp sessions"));

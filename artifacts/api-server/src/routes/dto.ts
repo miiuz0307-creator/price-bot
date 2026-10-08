@@ -103,13 +103,25 @@ export function productDto(row: typeof priceBotProducts.$inferSelect) {
 }
 
 export function adminDto(row: typeof priceBotAdmins.$inferSelect) {
+  const owner = row.role === "owner";
   return {
     id: row.id,
     phone: row.phone,
     label: row.label,
-    role: row.role === "owner" ? "owner" : "admin",
+    role: owner ? "owner" : "admin",
     active: row.active,
     addedAt: row.addedAt.toISOString(),
+    email: row.email ?? null,
+    // The owner implicitly holds every permission.
+    permissions: owner
+      ? ["catalog.edit", "targets.manage", "lookups.manage", "surge.manage", "whatsapp.manage", "users.manage"]
+      : row.permissions.filter((permission) => ["catalog.edit", "targets.manage", "lookups.manage", "surge.manage", "whatsapp.manage", "users.manage"].includes(permission)),
+    sharedWhatsapp: row.whatsappOwnerId !== null,
+    whatsappOwnerId: row.whatsappOwnerId ?? null,
+    hasPin: Boolean(row.codeHash),
+    invitedAt: row.invitedAt?.toISOString() ?? null,
+    lastLoginAt: row.lastLoginAt?.toISOString() ?? null,
+    lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
   };
 }
 

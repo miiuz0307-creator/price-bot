@@ -14,11 +14,13 @@ export type WhatsAppConnectionState = "disconnected" | "initializing" | "qr_read
 export type IncomingWhatsAppMessage = { adminId: number; from: string; chatId: string; isGroup: boolean; body: string; sentAt?: number; isHistory?: boolean };
 export type WhatsAppGroup = { identifier: string; label: string };
 type MessageHandler = (message: IncomingWhatsAppMessage) => Promise<{ responseText: string } | null>;
+export type WhatsAppEvent = { adminId: number; type: "connected" | "disconnected" | "logged_out" | "replaced" | "code_expired" | "error"; detail?: string; phoneNumber?: string | null };
+type EventListener = (event: WhatsAppEvent) => void;
 type Connection = {
   client: WASocket | null; initializePromise: Promise<void> | null; state: WhatsAppConnectionState;
   qrCode: string | null; pairingCode: string | null; phoneNumber: string | null; lastError: string | null;
   intentionalDisconnect: boolean; statusChecked: boolean; recentGroups: Map<string, string>; reconnectTimer: NodeJS.Timeout | null;
-  reconnectAttempts: number; lastGroupSyncAt: number;
+  reconnectAttempts: number; lastGroupSyncAt: number; pairingPhone: string | null;
   groupMetadataCache: Map<string, { metadata: GroupMetadata; expiresAt: number }>;
   groupMetadataRequests: Map<string, Promise<GroupMetadata>>;
 };
@@ -35,7 +37,7 @@ const authPathFor = (adminId: number) => path.join(authRoot, `admin-${adminId}`)
 const blankConnection = (): Connection => ({
   client: null, initializePromise: null, state: "disconnected", qrCode: null, pairingCode: null,
   phoneNumber: null, lastError: null, intentionalDisconnect: false, statusChecked: false,
-  recentGroups: new Map(), reconnectTimer: null, reconnectAttempts: 0, lastGroupSyncAt: 0,
+  recentGroups: new Map(), reconnectTimer: null, reconnectAttempts: 0, lastGroupSyncAt: 0, pairingPhone: null,
   groupMetadataCache: new Map(), groupMetadataRequests: new Map(),
 });
 function plainIdentifier(value: string) { return value.replace(/:\d+@/u, "@").replace(/@(s\.whatsapp\.net|g\.us|lid)$/iu, ""); }
@@ -59,7 +61,33 @@ class WhatsAppWebManager {
     if (!connection) { connection = blankConnection(); this.connections.set(adminId, connection); }
     return connection;
   }
+  private eventListeners: EventListener[] = [];
   registerMessageHandler(handler: MessageHandler) { this.messageHandler = handler; }
+  /** Connection lifecycle events (for the activity log / owner alerts). */
+  onEvent(listener: EventListener) { this.eventListeners.push(listener); }
+  private emit(event: WhatsAppEvent) {
+    for (const listener of this.eventListeners) {
+      try { listener(event); } catch (error) { logger.warn({ err: error }, "WhatsApp event listener failed"); }
+    }
+  }
+  /** Workspaces whose WhatsApp is connected right now. */
+  connectedAdminIds() {
+    return [...this.connections.entries()].filter(([, connection]) => connection.state === "connected").map(([adminId]) => adminId);
+  }
+  /**
+   * Link WhatsApp with an 8-character pairing code typed on the phone
+   * (Linked devices → Link with phone number) instead of scanning a QR.
+   */
+  async connectWithPairingCode(adminId: number, phone: string) {
+    let digits = phone.replace(/\D/g, "");
+    if (digits.startsWith("00")) digits = digits.slice(2);
+    if (digits.startsWith("0")) digits = `972${digits.slice(1)}`;
+    if (digits.length < 10 || digits.length > 15) throw new Error("invalid phone");
+    await this.connectFresh(adminId);
+    const connection = this.connection(adminId);
+    connection.pairingPhone = digits;
+    return this.status(connection);
+  }
   private async migrateLegacyAuth(adminId: number) {
     const legacyAuthPath = legacyAuthPaths.find((candidate) => existsSync(candidate));
     if (this.legacyMigrated || !legacyAuthPath || existsSync(authPathFor(adminId))) return;
@@ -99,6 +127,7 @@ class WhatsAppWebManager {
     connection.initializePromise = this.initialize(adminId, connection).catch((error) => {
       logger.warn({ err: error, adminId }, "Baileys WhatsApp initialization failed");
       connection.state = "error"; connection.lastError = "לא ניתן היה להפעיל את חיבור WhatsApp. נסו להתחבר מחדש."; connection.client = null;
+      this.emit({ adminId, type: "error", detail: error instanceof Error ? error.message : String(error) });
     }).finally(() => { connection.initializePromise = null; });
     return this.status(connection);
   }
@@ -170,8 +199,29 @@ class WhatsAppWebManager {
   }
   private async handleConnectionUpdate(adminId: number, connection: Connection, client: WASocket, update: { connection?: "close" | "connecting" | "open"; lastDisconnect?: { error?: Error }; qr?: string }) {
     if (connection.client !== client) return;
-    if (update.qr) { connection.qrCode = await QRCode.toDataURL(update.qr); if (!connection.pairingCode) connection.state = "qr_ready"; }
-    if (update.connection === "open") { connection.phoneNumber = plainIdentifier(jidNormalizedUser(client.user?.id ?? "")); connection.qrCode = null; connection.pairingCode = null; connection.lastError = null; connection.reconnectAttempts = 0; connection.state = "connected"; return; }
+    if (update.qr) {
+      if (connection.pairingPhone) {
+        // Pairing-code mode: ask WhatsApp for a code once the socket is ready; no QR is shown.
+        if (!connection.pairingCode) {
+          try {
+            const code = await client.requestPairingCode(connection.pairingPhone);
+            connection.pairingCode = code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : code;
+            connection.state = "pairing_code_ready";
+          } catch (error) {
+            logger.warn({ err: error, adminId }, "Unable to request WhatsApp pairing code");
+            connection.pairingPhone = null;
+            connection.lastError = "לא ניתן היה לקבל קוד צימוד. בדקו את המספר או התחברו בסריקת QR.";
+          }
+        }
+        if (connection.pairingPhone) return;
+      }
+      connection.qrCode = await QRCode.toDataURL(update.qr); if (!connection.pairingCode) connection.state = "qr_ready";
+    }
+    if (update.connection === "open") {
+      connection.phoneNumber = plainIdentifier(jidNormalizedUser(client.user?.id ?? "")); connection.qrCode = null; connection.pairingCode = null; connection.pairingPhone = null; connection.lastError = null; connection.reconnectAttempts = 0; connection.state = "connected";
+      this.emit({ adminId, type: "connected", phoneNumber: connection.phoneNumber });
+      return;
+    }
     if (update.connection !== "close") return;
     const statusCode = (update.lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)?.output?.statusCode;
     const wasLinked = Boolean(client.authState?.creds?.me);
@@ -181,6 +231,7 @@ class WhatsAppWebManager {
       // The device was removed from the phone. The saved keys are now useless and
       // would make every restart fail, so delete them and wait for a new QR scan.
       connection.state = "disconnected"; connection.lastError = "החיבור נותק מ-WhatsApp. התחברו מחדש.";
+      this.emit({ adminId, type: "logged_out" });
       await rm(authPathFor(adminId), { recursive: true, force: true }).catch((error) => logger.warn({ err: error, adminId }, "Unable to remove logged-out WhatsApp auth"));
       return;
     }
@@ -189,15 +240,21 @@ class WhatsAppWebManager {
       // Reconnecting would make the two fight forever, so stop here.
       connection.state = "error"; connection.lastError = "החיבור נפתח במקום אחר (שרת או סביבה נוספת). סגרו את החיבור השני ולחצו על חיבור מחדש.";
       logger.warn({ adminId }, "WhatsApp session replaced by another connection; not reconnecting");
+      this.emit({ adminId, type: "replaced" });
       return;
     }
     if (!wasLinked && (statusCode === DisconnectReason.timedOut || statusCode === DisconnectReason.forbidden)) {
       // Nobody scanned the QR code in time. Stop generating new codes in the background.
       connection.state = "disconnected"; connection.lastError = "תוקף קוד החיבור פג. לחצו שוב על „חיבור WhatsApp” כדי לקבל קוד חדש.";
+      connection.pairingPhone = null;
+      this.emit({ adminId, type: "code_expired" });
       await rm(authPathFor(adminId), { recursive: true, force: true }).catch(() => undefined);
       return;
     }
     connection.state = "initializing";
+    if (wasLinked && statusCode !== DisconnectReason.restartRequired && connection.reconnectAttempts === 0) {
+      this.emit({ adminId, type: "disconnected", detail: `status ${statusCode ?? "unknown"}; reconnecting` });
+    }
     if (connection.reconnectTimer) clearTimeout(connection.reconnectTimer);
     const reconnectDelay = Math.min(5 * 60_000, 2_000 * 2 ** Math.min(connection.reconnectAttempts, 8));
     connection.reconnectAttempts += 1;

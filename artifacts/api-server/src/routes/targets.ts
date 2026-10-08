@@ -76,7 +76,7 @@ import { formatBillingCalculation, parseBillingAmount } from "../services/billin
 import { logger } from "../lib/logger";
 import { formatSurgePrice, isSurgeAboveCatalog, isSurgeActiveAt, matchSurgeProduct, matchesSurgeDirection, parseSurgeQuotes, sortSurgeOffers, surgeDirectionKey, surgeEffectiveExpiry, surgeLifetimeMs } from "../services/surge-pricing";
 
-import { sessionCookieName, sessionLifetimeMs, scrypt, encodeSession, readSession, hashCode, verifyCode, validCode, loginKeys, loginRetryAfterSeconds, recordLoginFailure, rejectIfLoginBlocked, loginFailures, sendSession, requireAdmin, requireOwner, type AuthAdmin } from "../auth/admin-auth";
+import { sessionCookieName, sessionLifetimeMs, scrypt, hashCode, verifyCode, validCode, loginKeys, loginRetryAfterSeconds, recordLoginFailure, rejectIfLoginBlocked, loginFailures, sendSession, endCurrentSession, revokeAllSessions, requireAdmin, requireOwner, requirePermission, hasPermission, effectivePermissions, isPermission, allPermissions, workspaceId, type Permission, type AuthAdmin } from "../auth/admin-auth";
 import { normalizePhone, normalizeIdentifier } from "../lib/identifiers";
 import { findClosestProduct } from "../bot/search";
 import { messageCredit, messageHeader, formatProductResponse, formatHourlyPricingResponse, formatExtrasResponse } from "../bot/replies";
@@ -87,19 +87,19 @@ const router: IRouter = Router();
 
 router.get("/targets", async (req, res, next) => {
   try {
-    const rows = await db.select().from(priceBotTargets).where(eq(priceBotTargets.adminId, req.authAdmin!.id)).orderBy(desc(priceBotTargets.addedAt));
+    const rows = await db.select().from(priceBotTargets).where(eq(priceBotTargets.adminId, workspaceId(req.authAdmin!))).orderBy(desc(priceBotTargets.addedAt));
     res.json(ListTargetsResponse.parse(rows.map(targetDto)));
   } catch (error) {
     next(error);
   }
 });
 
-router.post("/targets", async (req, res, next) => {
+router.post("/targets", requirePermission("targets.manage"), async (req, res, next) => {
   try {
     const data = CreateTargetBody.parse(req.body);
     const [row] = await db
       .insert(priceBotTargets)
-      .values({ adminId: req.authAdmin!.id, kind: data.kind, identifier: normalizeIdentifier(data.identifier, data.kind), label: data.label })
+      .values({ adminId: workspaceId(req.authAdmin!), kind: data.kind, identifier: normalizeIdentifier(data.identifier, data.kind), label: data.label })
       .onConflictDoUpdate({
         target: [priceBotTargets.adminId, priceBotTargets.identifier],
         set: { kind: data.kind, label: data.label, active: true },
@@ -111,11 +111,11 @@ router.post("/targets", async (req, res, next) => {
   }
 });
 
-router.patch("/targets/:id", async (req, res, next) => {
+router.patch("/targets/:id", requirePermission("targets.manage"), async (req, res, next) => {
   try {
     const { id } = UpdateTargetParams.parse(req.params);
     const data = UpdateTargetBody.parse(req.body);
-    const [current] = await db.select().from(priceBotTargets).where(and(eq(priceBotTargets.id, id), eq(priceBotTargets.adminId, req.authAdmin!.id)));
+    const [current] = await db.select().from(priceBotTargets).where(and(eq(priceBotTargets.id, id), eq(priceBotTargets.adminId, workspaceId(req.authAdmin!))));
     if (!current) {
       res.status(404).json({ error: "היעד לא נמצא" });
       return;
@@ -123,7 +123,7 @@ router.patch("/targets/:id", async (req, res, next) => {
     const [row] = await db
       .update(priceBotTargets)
       .set({ label: data.label ?? current.label, active: data.active ?? current.active })
-      .where(and(eq(priceBotTargets.id, id), eq(priceBotTargets.adminId, req.authAdmin!.id)))
+      .where(and(eq(priceBotTargets.id, id), eq(priceBotTargets.adminId, workspaceId(req.authAdmin!))))
       .returning();
     res.json(UpdateTargetResponse.parse(targetDto(row)));
   } catch (error) {
@@ -131,10 +131,10 @@ router.patch("/targets/:id", async (req, res, next) => {
   }
 });
 
-router.delete("/targets/:id", async (req, res, next) => {
+router.delete("/targets/:id", requirePermission("targets.manage"), async (req, res, next) => {
   try {
     const { id } = DeleteTargetParams.parse(req.params);
-    await db.delete(priceBotTargets).where(and(eq(priceBotTargets.id, id), eq(priceBotTargets.adminId, req.authAdmin!.id)));
+    await db.delete(priceBotTargets).where(and(eq(priceBotTargets.id, id), eq(priceBotTargets.adminId, workspaceId(req.authAdmin!))));
     res.status(204).end();
   } catch (error) {
     next(error);

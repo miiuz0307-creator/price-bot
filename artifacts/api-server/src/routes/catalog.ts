@@ -76,7 +76,7 @@ import { formatBillingCalculation, parseBillingAmount } from "../services/billin
 import { logger } from "../lib/logger";
 import { formatSurgePrice, isSurgeAboveCatalog, isSurgeActiveAt, matchSurgeProduct, matchesSurgeDirection, parseSurgeQuotes, sortSurgeOffers, surgeDirectionKey, surgeEffectiveExpiry, surgeLifetimeMs } from "../services/surge-pricing";
 
-import { sessionCookieName, sessionLifetimeMs, scrypt, encodeSession, readSession, hashCode, verifyCode, validCode, loginKeys, loginRetryAfterSeconds, recordLoginFailure, rejectIfLoginBlocked, loginFailures, sendSession, requireAdmin, requireOwner, type AuthAdmin } from "../auth/admin-auth";
+import { sessionCookieName, sessionLifetimeMs, scrypt, hashCode, verifyCode, validCode, loginKeys, loginRetryAfterSeconds, recordLoginFailure, rejectIfLoginBlocked, loginFailures, sendSession, endCurrentSession, revokeAllSessions, requireAdmin, requireOwner, requirePermission, hasPermission, effectivePermissions, isPermission, allPermissions, workspaceId, type Permission, type AuthAdmin } from "../auth/admin-auth";
 import { normalizePhone, normalizeIdentifier } from "../lib/identifiers";
 import { findClosestProduct } from "../bot/search";
 import { messageCredit, messageHeader, formatProductResponse, formatHourlyPricingResponse, formatExtrasResponse } from "../bot/replies";
@@ -94,7 +94,7 @@ router.get("/products", async (_req, res, next) => {
   }
 });
 
-router.post("/products", async (req, res, next) => {
+router.post("/products", requirePermission("catalog.edit"), async (req, res, next) => {
   try {
     const data = CreateProductBody.parse(req.body);
     const [row] = await db
@@ -118,7 +118,7 @@ router.post("/products", async (req, res, next) => {
   }
 });
 
-router.patch("/products/:id", async (req, res, next) => {
+router.patch("/products/:id", requirePermission("catalog.edit"), async (req, res, next) => {
   try {
     const { id } = UpdateProductParams.parse(req.params);
     const data = UpdateProductBody.parse(req.body);
@@ -150,7 +150,7 @@ router.patch("/products/:id", async (req, res, next) => {
   }
 });
 
-router.delete("/products/:id", async (req, res, next) => {
+router.delete("/products/:id", requirePermission("catalog.edit"), async (req, res, next) => {
   try {
     const { id } = DeleteProductParams.parse(req.params);
     await db.delete(priceBotProducts).where(eq(priceBotProducts.id, id));
@@ -185,7 +185,7 @@ router.get("/abbreviations", async (_req, res, next) => {
   } catch (error) { next(error); }
 });
 
-router.post("/abbreviations", async (req, res, next) => {
+router.post("/abbreviations", requirePermission("catalog.edit"), async (req, res, next) => {
   try {
     const body = CreateAbbreviationBody.safeParse(req.body);
     const data = body.success ? parseAbbreviation(body.data) : null;
@@ -200,7 +200,7 @@ router.post("/abbreviations", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-router.patch("/abbreviations/:id", async (req, res, next) => {
+router.patch("/abbreviations/:id", requirePermission("catalog.edit"), async (req, res, next) => {
   try {
     const { id } = UpdateAbbreviationParams.parse(req.params);
     const body = UpdateAbbreviationBody.safeParse(req.body);
@@ -221,7 +221,7 @@ router.patch("/abbreviations/:id", async (req, res, next) => {
   }
 });
 
-router.delete("/abbreviations/:id", async (req, res, next) => {
+router.delete("/abbreviations/:id", requirePermission("catalog.edit"), async (req, res, next) => {
   try {
     const { id } = DeleteAbbreviationParams.parse(req.params);
     const [row] = await db.delete(priceBotAbbreviations).where(eq(priceBotAbbreviations.id, id)).returning();

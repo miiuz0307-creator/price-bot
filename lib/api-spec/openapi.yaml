@@ -240,6 +240,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/Admin"
   /admins/{id}:
+    patch:
+      operationId: updateAdmin
+      tags: [admins]
+      summary: Update a user (details, permissions, suspend/restore, shared WhatsApp)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminUpdate"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Admin"
     delete:
       operationId: deleteAdmin
       tags: [admins]
@@ -265,6 +284,119 @@ paths:
       responses:
         "204":
           description: Code updated
+  /admins/{id}/invite:
+    post:
+      operationId: inviteAdmin
+      tags: [admins]
+      summary: Send the user a WhatsApp invitation with the sign-in link
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Invitation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InviteResult"
+  /admins/{id}/sessions/revoke:
+    post:
+      operationId: revokeAdminSessions
+      tags: [admins]
+      summary: Sign the user out on every device
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: All sessions revoked
+  /audit-log:
+    get:
+      operationId: listAuditLog
+      tags: [admins]
+      summary: Recent activity (users with users.manage)
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 500 }
+        - name: actorId
+          in: query
+          required: false
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Activity entries, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditEntry"
+  /system/overview:
+    get:
+      operationId: getSystemOverview
+      tags: [dashboard]
+      summary: Owner overview of users, WhatsApp connections and problems
+      responses:
+        "200":
+          description: System overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemOverview"
+  /auth/code/request:
+    post:
+      operationId: requestLoginCode
+      tags: [auth]
+      summary: Send a one-time sign-in code to the user's WhatsApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginCodeRequest"
+      responses:
+        "200":
+          description: Request accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginCodeRequestResult"
+  /auth/code/verify:
+    post:
+      operationId: verifyLoginCode
+      tags: [auth]
+      summary: Sign in with a one-time code received on WhatsApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginCodeVerify"
+      responses:
+        "200":
+          description: Current authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentSession"
+  /auth/pin:
+    post:
+      operationId: loginWithPin
+      tags: [auth]
+      summary: Sign in with phone/email and personal code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PinLoginInput"
+      responses:
+        "200":
+          description: Current authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentSession"
   /auth/admins:
     get:
       operationId: listLoginAdmins
@@ -379,6 +511,24 @@ paths:
       responses:
         "200":
           description: Current WhatsApp pairing status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WhatsAppStatus"
+  /integration/whatsapp/pair:
+    post:
+      operationId: pairWhatsApp
+      tags: [integration]
+      summary: Connect WhatsApp with a pairing code instead of a QR scan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WhatsAppPairInput"
+      responses:
+        "200":
+          description: Current WhatsApp pairing status (pairingCode appears within seconds)
           content:
             application/json:
               schema:
@@ -648,9 +798,12 @@ components:
           type: array
           items: { type: string }
         active: { type: boolean }
+    Permission:
+      type: string
+      enum: [catalog.edit, targets.manage, lookups.manage, surge.manage, whatsapp.manage, users.manage]
     Admin:
       type: object
-      required: [id, phone, label, role, active, addedAt]
+      required: [id, phone, label, role, active, addedAt, email, permissions, sharedWhatsapp, whatsappOwnerId, hasPin, invitedAt, lastLoginAt, lastSeenAt]
       properties:
         id: { type: integer }
         phone: { type: string }
@@ -658,12 +811,111 @@ components:
         role: { type: string, enum: [owner, admin] }
         active: { type: boolean }
         addedAt: { type: string }
+        email: { type: ["string", "null"] }
+        permissions:
+          type: array
+          items: { $ref: "#/components/schemas/Permission" }
+        sharedWhatsapp: { type: boolean }
+        whatsappOwnerId: { type: ["integer", "null"] }
+        hasPin: { type: boolean }
+        invitedAt: { type: ["string", "null"] }
+        lastLoginAt: { type: ["string", "null"] }
+        lastSeenAt: { type: ["string", "null"] }
     AdminInput:
       type: object
       required: [phone]
       properties:
         phone: { type: string, minLength: 7 }
         label: { type: string }
+        email: { type: string }
+        permissions:
+          type: array
+          items: { $ref: "#/components/schemas/Permission" }
+        sharedWhatsapp: { type: boolean }
+    AdminUpdate:
+      type: object
+      properties:
+        phone: { type: string, minLength: 7 }
+        label: { type: string }
+        email: { type: ["string", "null"] }
+        permissions:
+          type: array
+          items: { $ref: "#/components/schemas/Permission" }
+        active: { type: boolean }
+        sharedWhatsapp: { type: boolean }
+    InviteResult:
+      type: object
+      required: [sent, link]
+      properties:
+        sent: { type: boolean }
+        link: { type: string }
+    AuditEntry:
+      type: object
+      required: [id, actorId, actorLabel, action, targetType, targetId, details, createdAt]
+      properties:
+        id: { type: integer }
+        actorId: { type: ["integer", "null"] }
+        actorLabel: { type: ["string", "null"] }
+        action: { type: string }
+        targetType: { type: string }
+        targetId: { type: string }
+        details:
+          type: object
+          additionalProperties: true
+        createdAt: { type: string }
+    SystemConnection:
+      type: object
+      required: [adminId, label, connected, connectionState, phoneNumber, lastError, sharedUsers]
+      properties:
+        adminId: { type: integer }
+        label: { type: string }
+        connected: { type: boolean }
+        connectionState: { type: string }
+        phoneNumber: { type: ["string", "null"] }
+        lastError: { type: ["string", "null"] }
+        sharedUsers: { type: integer }
+    SystemOverview:
+      type: object
+      required: [activeUsers, suspendedUsers, connections, pendingLookups, activeSurges, recentProblems]
+      properties:
+        activeUsers: { type: integer }
+        suspendedUsers: { type: integer }
+        connections:
+          type: array
+          items: { $ref: "#/components/schemas/SystemConnection" }
+        pendingLookups: { type: integer }
+        activeSurges: { type: integer }
+        recentProblems:
+          type: array
+          items: { $ref: "#/components/schemas/AuditEntry" }
+    LoginCodeRequest:
+      type: object
+      required: [identifier]
+      properties:
+        identifier: { type: string, minLength: 3, maxLength: 200 }
+    LoginCodeRequestResult:
+      type: object
+      required: [sent, destination]
+      properties:
+        sent: { type: boolean }
+        destination: { type: ["string", "null"] }
+    LoginCodeVerify:
+      type: object
+      required: [identifier, code]
+      properties:
+        identifier: { type: string, minLength: 3, maxLength: 200 }
+        code: { type: string, pattern: '^\d{6}$' }
+    PinLoginInput:
+      type: object
+      required: [identifier, code]
+      properties:
+        identifier: { type: string, minLength: 3, maxLength: 200 }
+        code: { type: string, pattern: '^\d{4,8}$' }
+    WhatsAppPairInput:
+      type: object
+      required: [phoneNumber]
+      properties:
+        phoneNumber: { type: string, minLength: 9, maxLength: 20 }
     AdminCodeInput:
       type: object
       required: [code]

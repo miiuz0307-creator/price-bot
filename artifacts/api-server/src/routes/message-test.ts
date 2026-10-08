@@ -76,7 +76,7 @@ import { formatBillingCalculation, parseBillingAmount } from "../services/billin
 import { logger } from "../lib/logger";
 import { formatSurgePrice, isSurgeAboveCatalog, isSurgeActiveAt, matchSurgeProduct, matchesSurgeDirection, parseSurgeQuotes, sortSurgeOffers, surgeDirectionKey, surgeEffectiveExpiry, surgeLifetimeMs } from "../services/surge-pricing";
 
-import { sessionCookieName, sessionLifetimeMs, scrypt, encodeSession, readSession, hashCode, verifyCode, validCode, loginKeys, loginRetryAfterSeconds, recordLoginFailure, rejectIfLoginBlocked, loginFailures, sendSession, requireAdmin, requireOwner, type AuthAdmin } from "../auth/admin-auth";
+import { sessionCookieName, sessionLifetimeMs, scrypt, hashCode, verifyCode, validCode, loginKeys, loginRetryAfterSeconds, recordLoginFailure, rejectIfLoginBlocked, loginFailures, sendSession, endCurrentSession, revokeAllSessions, requireAdmin, requireOwner, requirePermission, hasPermission, effectivePermissions, isPermission, allPermissions, workspaceId, type Permission, type AuthAdmin } from "../auth/admin-auth";
 import { normalizePhone, normalizeIdentifier } from "../lib/identifiers";
 import { findClosestProduct } from "../bot/search";
 import { messageCredit, messageHeader, formatProductResponse, formatHourlyPricingResponse, formatExtrasResponse } from "../bot/replies";
@@ -90,7 +90,7 @@ router.post("/webhooks/whatsapp", async (req, res, next) => {
   try {
     const { from, body } = ReceiveWhatsAppMessageBody.parse(req.body);
     // Dashboard test message: runs against the signed-in administrator's own targets.
-    const result = await processPriceBotMessage({ adminId: req.authAdmin!.id, from, chatId: from, body, notifyAdmins: false });
+    const result = await processPriceBotMessage({ adminId: workspaceId(req.authAdmin!), from, chatId: from, body, notifyAdmins: false });
     res.json(ReceiveWhatsAppMessageResponse.parse(result));
   } catch (error) {
     next(error);

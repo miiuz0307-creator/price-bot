@@ -76,7 +76,7 @@ import { formatBillingCalculation, parseBillingAmount } from "../services/billin
 import { logger } from "../lib/logger";
 import { formatSurgePrice, isSurgeAboveCatalog, isSurgeActiveAt, matchSurgeProduct, matchesSurgeDirection, parseSurgeQuotes, sortSurgeOffers, surgeDirectionKey, surgeEffectiveExpiry, surgeLifetimeMs } from "../services/surge-pricing";
 
-import { sessionCookieName, sessionLifetimeMs, scrypt, encodeSession, readSession, hashCode, verifyCode, validCode, loginKeys, loginRetryAfterSeconds, recordLoginFailure, rejectIfLoginBlocked, loginFailures, sendSession, requireAdmin, requireOwner, type AuthAdmin } from "../auth/admin-auth";
+import { sessionCookieName, sessionLifetimeMs, scrypt, hashCode, verifyCode, validCode, loginKeys, loginRetryAfterSeconds, recordLoginFailure, rejectIfLoginBlocked, loginFailures, sendSession, endCurrentSession, revokeAllSessions, requireAdmin, requireOwner, requirePermission, hasPermission, effectivePermissions, isPermission, allPermissions, workspaceId, type Permission, type AuthAdmin } from "../auth/admin-auth";
 import { normalizePhone, normalizeIdentifier } from "../lib/identifiers";
 import { findClosestProduct } from "../bot/search";
 import { messageCredit, messageHeader, formatProductResponse, formatHourlyPricingResponse, formatExtrasResponse } from "../bot/replies";
@@ -90,7 +90,7 @@ router.get("/lookup-requests", async (req, res, next) => {
     const rows = await db
       .select()
       .from(priceBotLookups)
-      .where(and(eq(priceBotLookups.matched, false), eq(priceBotLookups.adminId, req.authAdmin!.id)))
+      .where(and(eq(priceBotLookups.matched, false), eq(priceBotLookups.adminId, workspaceId(req.authAdmin!))))
       .orderBy(desc(priceBotLookups.createdAt))
       .limit(20);
     res.json(ListLookupRequestsResponse.parse(rows.map(lookupRequestDto)));
@@ -99,24 +99,24 @@ router.get("/lookup-requests", async (req, res, next) => {
   }
 });
 
-router.delete("/lookup-requests/:id", async (req, res, next) => {
+router.delete("/lookup-requests/:id", requirePermission("lookups.manage"), async (req, res, next) => {
   try {
     const { id } = DeleteLookupRequestParams.parse(req.params);
-    await db.delete(priceBotLookups).where(and(eq(priceBotLookups.id, id), eq(priceBotLookups.adminId, req.authAdmin!.id)));
+    await db.delete(priceBotLookups).where(and(eq(priceBotLookups.id, id), eq(priceBotLookups.adminId, workspaceId(req.authAdmin!))));
     res.status(204).end();
   } catch (error) {
     next(error);
   }
 });
 
-router.post("/lookup-requests/:id/approve", async (req, res, next) => {
+router.post("/lookup-requests/:id/approve", requirePermission("lookups.manage"), async (req, res, next) => {
   try {
     const { id } = ApproveLookupEstimateParams.parse(req.params);
     const outcome = await db.transaction(async (tx) => {
       const [request] = await tx
         .select()
         .from(priceBotLookups)
-        .where(and(eq(priceBotLookups.id, id), eq(priceBotLookups.adminId, req.authAdmin!.id)))
+        .where(and(eq(priceBotLookups.id, id), eq(priceBotLookups.adminId, workspaceId(req.authAdmin!))))
         .for("update");
       if (!request?.estimate) return { status: 404 as const };
       const { name, distanceKm, priceMatrix, waitTime } = request.estimate;

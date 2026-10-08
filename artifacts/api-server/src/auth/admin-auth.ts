@@ -1,5 +1,5 @@
 import { Router, type IRouter, type RequestHandler } from "express";
-import { createHmac, randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import {
   and,
@@ -62,6 +62,7 @@ import {
 import {
   db,
   priceBotAdmins,
+  priceBotSessions,
   priceBotAbbreviations,
   priceBotLookups,
   priceBotProducts,
@@ -79,7 +80,7 @@ import { formatSurgePrice, isSurgeAboveCatalog, isSurgeActiveAt, matchSurgeProdu
 
 export const scrypt = promisify(scryptCallback);
 export const sessionCookieName = "price_bot_session";
-export const sessionLifetimeMs = 8 * 60 * 60 * 1000;
+export const sessionLifetimeMs = Number(process.env.SESSION_DAYS ?? 30) * 24 * 60 * 60 * 1000;
 
 
 export type AuthAdmin = typeof priceBotAdmins.$inferSelect;
@@ -88,32 +89,6 @@ declare global {
     interface Request {
       authAdmin?: AuthAdmin;
     }
-  }
-}
-
-export function sessionSecret() {
-  const secret = process.env.SESSION_SECRET;
-  if (!secret) throw new Error("SESSION_SECRET must be configured");
-  return secret;
-}
-
-export function encodeSession(adminId: number) {
-  const payload = Buffer.from(JSON.stringify({ adminId, exp: Date.now() + sessionLifetimeMs, nonce: randomBytes(16).toString("hex") })).toString("base64url");
-  const signature = createHmac("sha256", sessionSecret()).update(payload).digest("base64url");
-  return `${payload}.${signature}`;
-}
-
-export function readSession(value: string | undefined) {
-  if (!value) return null;
-  const [payload, signature] = value.split(".");
-  if (!payload || !signature) return null;
-  const expected = createHmac("sha256", sessionSecret()).update(payload).digest("base64url");
-  if (signature.length !== expected.length || !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
-  try {
-    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString()) as { adminId?: number; exp?: number };
-    return typeof parsed.adminId === "number" && typeof parsed.exp === "number" && parsed.exp > Date.now() ? parsed : null;
-  } catch {
-    return null;
   }
 }
 
@@ -181,32 +156,73 @@ export function rejectIfLoginBlocked(res: import("express").Response, keys: { ke
   return true;
 }
 
-export function sendSession(res: import("express").Response, admin: AuthAdmin) {
-  res.cookie(sessionCookieName, encodeSession(admin.id), {
+const tokenHash = (token: string) => createHash("sha256").update(token).digest("base64url");
+
+/**
+ * Starts a server-side session (revocable, listed per device) and sets the cookie.
+ * The cookie holds a random token; the database only stores its SHA-256.
+ */
+export async function sendSession(
+  req: import("express").Request,
+  res: import("express").Response,
+  admin: AuthAdmin,
+  method: "pin" | "whatsapp" | "bootstrap" = "pin",
+) {
+  const token = randomBytes(32).toString("base64url");
+  const now = new Date();
+  await db.insert(priceBotSessions).values({
+    tokenHash: tokenHash(token), adminId: admin.id, method,
+    userAgent: (req.get("user-agent") ?? "").slice(0, 300), ip: req.ip ?? "",
+    expiresAt: new Date(now.getTime() + sessionLifetimeMs),
+  });
+  await db.update(priceBotAdmins).set({ lastLoginAt: now, lastSeenAt: now }).where(eq(priceBotAdmins.id, admin.id));
+  res.cookie(sessionCookieName, token, {
     httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production",
     maxAge: sessionLifetimeMs, path: "/",
   });
 }
 
+/** Ends the session behind the current request's cookie. */
+export async function endCurrentSession(req: import("express").Request, res: import("express").Response) {
+  const token = req.cookies?.[sessionCookieName];
+  if (typeof token === "string" && token) {
+    await db.update(priceBotSessions).set({ revokedAt: new Date() }).where(eq(priceBotSessions.tokenHash, tokenHash(token)));
+  }
+  res.clearCookie(sessionCookieName, { path: "/" });
+}
+
+/** Signs a user out everywhere (suspension, "disconnect user", lost phone). */
+export async function revokeAllSessions(adminId: number) {
+  await db.update(priceBotSessions).set({ revokedAt: new Date() })
+    .where(and(eq(priceBotSessions.adminId, adminId), isNull(priceBotSessions.revokedAt)));
+}
+
+const touchIntervalMs = 5 * 60_000;
+
 export const requireAdmin: RequestHandler = async (req, res, next) => {
   try {
-    const session = readSession(req.cookies?.[sessionCookieName]);
-    if (!session) {
+    const token = req.cookies?.[sessionCookieName];
+    if (typeof token !== "string" || !token) {
       res.status(401).json({ error: "נדרשת התחברות" });
       return;
     }
-    const adminId = session.adminId;
-    if (typeof adminId !== "number") {
-      res.status(401).json({ error: "נדרשת התחברות" });
-      return;
-    }
-    const [admin] = await db.select().from(priceBotAdmins).where(and(eq(priceBotAdmins.id, adminId), eq(priceBotAdmins.active, true)));
-    if (!admin) {
+    const now = new Date();
+    const [row] = await db.select({ session: priceBotSessions, admin: priceBotAdmins })
+      .from(priceBotSessions)
+      .innerJoin(priceBotAdmins, eq(priceBotAdmins.id, priceBotSessions.adminId))
+      .where(and(eq(priceBotSessions.tokenHash, tokenHash(token)), isNull(priceBotSessions.revokedAt), gt(priceBotSessions.expiresAt, now)));
+    if (!row || !row.admin.active) {
       res.clearCookie(sessionCookieName, { path: "/" });
-      res.status(401).json({ error: "הגישה אינה פעילה" });
+      res.status(401).json({ error: row ? "הגישה אינה פעילה" : "נדרשת התחברות" });
       return;
     }
-    req.authAdmin = admin;
+    if (now.getTime() - row.session.lastSeenAt.getTime() > touchIntervalMs) {
+      void Promise.all([
+        db.update(priceBotSessions).set({ lastSeenAt: now }).where(eq(priceBotSessions.id, row.session.id)),
+        db.update(priceBotAdmins).set({ lastSeenAt: now }).where(eq(priceBotAdmins.id, row.admin.id)),
+      ]).catch(() => undefined);
+    }
+    req.authAdmin = row.admin;
     next();
   } catch (error) {
     next(error);
@@ -220,3 +236,49 @@ export const requireOwner: RequestHandler = (req, res, next) => {
   }
   next();
 };
+
+// ---- permissions ---------------------------------------------------------------
+
+export const allPermissions = ["catalog.edit", "targets.manage", "lookups.manage", "surge.manage", "whatsapp.manage", "users.manage"] as const;
+export type Permission = typeof allPermissions[number];
+
+export function isPermission(value: string): value is Permission {
+  return (allPermissions as readonly string[]).includes(value);
+}
+
+/** The owner can do everything; everyone else needs the permission granted. */
+export function hasPermission(admin: AuthAdmin, permission: Permission) {
+  return admin.role === "owner" || admin.permissions.includes(permission);
+}
+
+export function effectivePermissions(admin: AuthAdmin): Permission[] {
+  return admin.role === "owner" ? [...allPermissions] : admin.permissions.filter(isPermission);
+}
+
+const permissionLabels: Record<Permission, string> = {
+  "catalog.edit": "עריכת מחירון וקיצורים",
+  "targets.manage": "ניהול יעדים",
+  "lookups.manage": "טיפול בבקשות מחיר",
+  "surge.manage": "הפעלת זמני עומס",
+  "whatsapp.manage": "חיבור וניתוק WhatsApp",
+  "users.manage": "ניהול משתמשים",
+};
+
+export function requirePermission(permission: Permission): RequestHandler {
+  return (req, res, next) => {
+    if (!req.authAdmin || !hasPermission(req.authAdmin, permission)) {
+      res.status(403).json({ error: `אין לך הרשאה לפעולה זו (${permissionLabels[permission]}).` });
+      return;
+    }
+    next();
+  };
+}
+
+/**
+ * The WhatsApp workspace a user works in: their own connection, or the
+ * connection of the user who shared theirs (no second QR needed).
+ * Targets, price requests, surge monitoring and groups all belong to it.
+ */
+export function workspaceId(admin: AuthAdmin) {
+  return admin.whatsappOwnerId ?? admin.id;
+}

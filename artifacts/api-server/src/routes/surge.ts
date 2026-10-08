@@ -76,7 +76,7 @@ import { formatBillingCalculation, parseBillingAmount } from "../services/billin
 import { logger } from "../lib/logger";
 import { formatSurgePrice, isSurgeAboveCatalog, isSurgeActiveAt, matchSurgeProduct, matchesSurgeDirection, parseSurgeQuotes, sortSurgeOffers, surgeDirectionKey, surgeEffectiveExpiry, surgeLifetimeMs } from "../services/surge-pricing";
 
-import { sessionCookieName, sessionLifetimeMs, scrypt, encodeSession, readSession, hashCode, verifyCode, validCode, loginKeys, loginRetryAfterSeconds, recordLoginFailure, rejectIfLoginBlocked, loginFailures, sendSession, requireAdmin, requireOwner, type AuthAdmin } from "../auth/admin-auth";
+import { sessionCookieName, sessionLifetimeMs, scrypt, hashCode, verifyCode, validCode, loginKeys, loginRetryAfterSeconds, recordLoginFailure, rejectIfLoginBlocked, loginFailures, sendSession, endCurrentSession, revokeAllSessions, requireAdmin, requireOwner, requirePermission, hasPermission, effectivePermissions, isPermission, allPermissions, workspaceId, type Permission, type AuthAdmin } from "../auth/admin-auth";
 import { normalizePhone, normalizeIdentifier } from "../lib/identifiers";
 import { findClosestProduct } from "../bot/search";
 import { messageCredit, messageHeader, formatProductResponse, formatHourlyPricingResponse, formatExtrasResponse } from "../bot/replies";
@@ -115,17 +115,17 @@ export async function surgeStatus(adminId: number) {
 }
 
 router.get("/surge", async (req, res, next) => {
-  try { res.json(await surgeStatus(req.authAdmin!.id)); } catch (error) { next(error); }
+  try { res.json(await surgeStatus(workspaceId(req.authAdmin!))); } catch (error) { next(error); }
 });
 
-router.post("/surge/start", async (req, res, next) => {
+router.post("/surge/start", requirePermission("surge.manage"), async (req, res, next) => {
   try {
     const input = StartSurgeMonitoringBody.safeParse(req.body);
     if (!input.success) { res.status(400).json({ error: "בחרו לפחות קבוצת WhatsApp אחת." }); return; }
     const identifiers = [...new Set(input.data.groupIdentifiers)];
-    const connection = await whatsappWeb.getStatus(req.authAdmin!.id);
+    const connection = await whatsappWeb.getStatus(workspaceId(req.authAdmin!));
     if (!connection.connected) { res.status(409).json({ error: "חברו את WhatsApp לפני הפעלת זמני עומס." }); return; }
-    const groups = await whatsappWeb.listGroups(req.authAdmin!.id);
+    const groups = await whatsappWeb.listGroups(workspaceId(req.authAdmin!));
     const available = new Set(groups.map((group) => group.identifier));
     if (!identifiers.length || identifiers.some((identifier) => !available.has(identifier))) {
       res.status(400).json({ error: "יש לבחור קבוצות שהבוט מחובר אליהן." }); return;
@@ -133,22 +133,22 @@ router.post("/surge/start", async (req, res, next) => {
     const now = new Date();
     await db.transaction(async (tx) => {
       await tx.insert(priceBotSurgeSettings)
-        .values({ adminId: req.authAdmin!.id, active: true, groupIdentifiers: identifiers, startedAt: now })
+        .values({ adminId: workspaceId(req.authAdmin!), active: true, groupIdentifiers: identifiers, startedAt: now })
         .onConflictDoUpdate({ target: priceBotSurgeSettings.adminId, set: { active: true, groupIdentifiers: identifiers, startedAt: now } });
-      await tx.update(priceBotSurgeOffers).set({ expiresAt: now }).where(eq(priceBotSurgeOffers.adminId, req.authAdmin!.id));
+      await tx.update(priceBotSurgeOffers).set({ expiresAt: now }).where(eq(priceBotSurgeOffers.adminId, workspaceId(req.authAdmin!)));
     });
-    res.json(StartSurgeMonitoringResponse.parse(await surgeStatus(req.authAdmin!.id)));
+    res.json(StartSurgeMonitoringResponse.parse(await surgeStatus(workspaceId(req.authAdmin!))));
   } catch (error) { next(error); }
 });
 
-router.post("/surge/stop", async (req, res, next) => {
+router.post("/surge/stop", requirePermission("surge.manage"), async (req, res, next) => {
   try {
     const now = new Date();
     await db.transaction(async (tx) => {
-      await tx.update(priceBotSurgeSettings).set({ active: false }).where(eq(priceBotSurgeSettings.adminId, req.authAdmin!.id));
-      await tx.update(priceBotSurgeOffers).set({ expiresAt: now }).where(eq(priceBotSurgeOffers.adminId, req.authAdmin!.id));
+      await tx.update(priceBotSurgeSettings).set({ active: false }).where(eq(priceBotSurgeSettings.adminId, workspaceId(req.authAdmin!)));
+      await tx.update(priceBotSurgeOffers).set({ expiresAt: now }).where(eq(priceBotSurgeOffers.adminId, workspaceId(req.authAdmin!)));
     });
-    res.json(StopSurgeMonitoringResponse.parse(await surgeStatus(req.authAdmin!.id)));
+    res.json(StopSurgeMonitoringResponse.parse(await surgeStatus(workspaceId(req.authAdmin!))));
   } catch (error) { next(error); }
 });
 
