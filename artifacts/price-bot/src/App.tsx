@@ -16,6 +16,8 @@ import {
   Group,
   LayoutDashboard,
   Menu,
+  Moon,
+  Sun,
   MessageSquareText,
   PackageOpen,
   Pencil,
@@ -89,6 +91,7 @@ import SurgePage from '@/pages/surge';
 import UsersPage from '@/pages/users';
 import ActivityPage from '@/pages/activity';
 import { SessionProvider, useCan, useSessionAdmin } from '@/lib/session';
+import { useTheme } from '@/lib/theme';
 import { Link, Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import './index.css';
 
@@ -108,6 +111,7 @@ const navItems = [
 function AppShell({ children, admin, onLogout }: { children: ReactNode; admin: Admin; onLogout: () => void }) {
   const [location] = useLocation();
   const [open, setOpen] = useState(false);
+  const theme = useTheme();
   const visibleNav = navItems.filter((item) => !item.permission || admin.role === 'owner' || admin.permissions.includes(item.permission));
   const activeItem = visibleNav.find((item) => item.href === location) || visibleNav[0];
   return (
@@ -160,7 +164,7 @@ function AppShell({ children, admin, onLogout }: { children: ReactNode; admin: A
           <div className="mr-auto flex items-center gap-3">
             <div className="hidden text-left sm:block"><p className="text-xs font-bold text-muted-foreground">אתם כאן</p><p className="text-sm font-extrabold">{activeItem.label}</p></div>
             <div className="hidden text-right sm:block"><p className="text-xs font-bold">{admin.label}</p><button onClick={onLogout} className="text-xs text-muted-foreground hover:text-foreground">יציאה / החלפת מנהל</button></div>
-            <div className="grid size-10 place-items-center rounded-full bg-secondary text-primary"><UserRound className="size-4" /></div>
+            <button type="button" onClick={theme.toggle} className="grid size-10 place-items-center rounded-full border border-border bg-card text-muted-foreground hover:text-foreground" aria-label={theme.dark ? 'מעבר למצב בהיר' : 'מעבר למצב כהה'} title={theme.dark ? 'מצב בהיר' : 'מצב כהה'} data-testid="button-theme">{theme.dark ? <Sun className="size-4" /> : <Moon className="size-4" />}</button><div className="grid size-10 place-items-center rounded-full bg-secondary text-primary"><UserRound className="size-4" /></div>
           </div>
         </div>
         <div className="mx-auto max-w-[1440px] px-5 py-8 sm:px-8 lg:px-10">{children}</div>

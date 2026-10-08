@@ -15,3 +15,10 @@ createRoot(document.getElementById('root')!, {
     <App />
   </ErrorBoundary>,
 );
+
+// Installable app (PWA). Only in production builds served over HTTPS/localhost.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((error) => console.warn('Service worker registration failed', error));
+  });
+}

@@ -1,0 +1,24 @@
+{
+  "name": "מחירון בוואטסאפ",
+  "short_name": "מחירון",
+  "description": "ניהול בוט המחירון בוואטסאפ: מחירים, זמני עומס, משתמשים וחיבורים",
+  "lang": "he",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f7f5f0",
+  "theme_color": "#1B3834",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "מחירון", "url": "/products", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
+    { "name": "זמני עומס", "url": "/surge", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
+    { "name": "חיבור WhatsApp", "url": "/settings", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

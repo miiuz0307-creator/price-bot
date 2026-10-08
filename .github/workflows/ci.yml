@@ -114,6 +114,67 @@ jobs:
           NODE_ENV: production
           BASE_PATH: /
 
+  screenshots:
+    # Visual check of every screen (desktop/phone). Runs on work branches when the
+    # commit message contains [screenshots]; images are committed to docs/screenshots.
+    if: github.event_name == 'push' && github.ref != 'refs/heads/main' && contains(github.event.head_commit.message, '[screenshots]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: check
+    permissions:
+      contents: write
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pricebot
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/pricebot
+      SESSION_SECRET: ci-only-secret-not-used-in-production
+      NODE_ENV: production
+      PORT: 8080
+      OWNER_INITIAL_CODE: "2468"
+      TZ: Asia/Jerusalem
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @workspace/api-server run build && BASE_PATH=/ pnpm --filter @workspace/price-bot run build
+      - name: Start server
+        run: |
+          WHATSAPP_AUTH_DIR=$RUNNER_TEMP/wa node artifacts/api-server/dist/index.mjs > $RUNNER_TEMP/server.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:8080/api/healthz && break; sleep 1; done
+      - name: Seed demo data
+        run: scripts/ci/run.sh "Seed demo data" scripts/ci/seed-demo.sh
+      - name: Screenshots
+        run: |
+          mkdir -p $RUNNER_TEMP/pw && cd $RUNNER_TEMP/pw && npm init -y >/dev/null && npm i playwright@1.55.0 >/dev/null && npx playwright install --with-deps chromium >/dev/null
+          cp $GITHUB_WORKSPACE/scripts/ci/screenshots.mjs $RUNNER_TEMP/pw/
+          cd $GITHUB_WORKSPACE && OUT_DIR=$GITHUB_WORKSPACE/docs/screenshots SCHEMES=light,dark \
+            scripts/ci/run.sh "Screenshots" node $RUNNER_TEMP/pw/screenshots.mjs
+      - name: Server log on failure
+        if: failure()
+        run: echo "::error title=Server log::$(tail -n 60 $RUNNER_TEMP/server.log | sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}')"
+      - name: Commit screenshots
+        run: |
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git pull --rebase --autostash origin "${GITHUB_REF#refs/heads/}" || true
+          git add docs/screenshots
+          git diff --cached --quiet || { git commit -m "docs: UI screenshots [ci]"; git push; }
+
   docker:
     runs-on: ubuntu-latest
     timeout-minutes: 25
