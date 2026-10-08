@@ -1,10 +1,17 @@
 name: CI
 
-# Runs on every push and pull request: install, typecheck, tests, production build,
-# and a Docker image build. A red ✗ on GitHub means "do not deploy this version".
+# Runs on every push and pull request: install, typecheck, tests (including bot
+# replies against a real PostgreSQL), production build, and a Docker image build.
+# A red ✗ on GitHub means "do not deploy this version".
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      update_golden:
+        description: "Re-record golden bot replies (only after an intentional reply change)"
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -14,6 +21,20 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: pricebot_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U test" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/pricebot_test
+      SESSION_SECRET: ci-only-secret-not-used-in-production
+      LOG_LEVEL: warn
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -26,8 +47,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Typecheck (all packages)
         run: pnpm run typecheck
-      - name: Tests
+      - name: Unit tests
         run: pnpm --filter @workspace/api-server run test
+      - name: Create test database schema
+        run: pnpm --filter @workspace/db run push-force
+      - name: Bot reply tests (golden)
+        run: pnpm --filter @workspace/api-server run test:integration
+        env:
+          UPDATE_GOLDEN: ${{ inputs.update_golden && '1' || '' }}
       - name: Build API server
         run: pnpm --filter @workspace/api-server run build
       - name: Build web app
