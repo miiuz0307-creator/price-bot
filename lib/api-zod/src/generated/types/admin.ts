@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AdminRole } from './adminRole';
+import type { Permission } from './permission';
 
 export interface Admin {
   id: number;
@@ -14,4 +15,17 @@ export interface Admin {
   role: AdminRole;
   active: boolean;
   addedAt: string;
+  /** @nullable */
+  email: string | null;
+  permissions: Permission[];
+  sharedWhatsapp: boolean;
+  /** @nullable */
+  whatsappOwnerId: number | null;
+  hasPin: boolean;
+  /** @nullable */
+  invitedAt: string | null;
+  /** @nullable */
+  lastLoginAt: string | null;
+  /** @nullable */
+  lastSeenAt: string | null;
 }

@@ -1,5 +1,7 @@
 import {
+  type AnyPgColumn,
   boolean,
+  index,
   integer,
   jsonb,
   numeric,
@@ -34,6 +36,14 @@ export const priceBotAdmins = pgTable("price_bot_admins", {
   active: boolean("active").notNull().default(true),
   codeHash: text("code_hash"),
   addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow(),
+  // --- accounts & permissions (migration 0001) ---
+  email: text("email").unique(),
+  permissions: text("permissions").array().notNull().default([]),
+  /** Set when this user works on another user's WhatsApp connection (no QR of their own). */
+  whatsappOwnerId: integer("whatsapp_owner_id").references((): AnyPgColumn => priceBotAdmins.id, { onDelete: "set null" }),
+  invitedAt: timestamp("invited_at", { withTimezone: true }),
+  lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
 });
 
 export const priceBotTargets = pgTable("price_bot_targets", {
@@ -54,7 +64,7 @@ export const priceBotLookups = pgTable("price_bot_lookups", {
   matched: boolean("matched").notNull().default(false),
   estimate: jsonb("estimate").$type<{ name: string; distanceKm: number; priceMatrix: number[]; waitTime?: string }>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [index("price_bot_lookups_admin_pending_idx").on(table.adminId, table.matched, table.createdAt)]);
 
 export const insertPriceBotProductSchema = createInsertSchema(priceBotProducts);
 export type PriceBotProduct = typeof priceBotProducts.$inferSelect;

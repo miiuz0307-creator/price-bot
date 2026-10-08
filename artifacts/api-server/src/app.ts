@@ -45,7 +45,14 @@ app.use("/api", router);
 const webDir = path.resolve(process.env.WEB_DIST_DIR || path.resolve(process.cwd(), "artifacts/price-bot/dist/public"));
 if (existsSync(path.join(webDir, "index.html"))) {
   app.use("/assets", express.static(path.join(webDir, "assets"), { immutable: true, maxAge: "1y", fallthrough: false }));
-  app.use(express.static(webDir, { index: false, maxAge: "1h" }));
+  app.use(express.static(webDir, {
+    index: false,
+    maxAge: "1h",
+    // The service worker and manifest must update as soon as a new version ships.
+    setHeaders: (res, filePath) => {
+      if (/(?:sw\.js|manifest\.webmanifest)$/u.test(filePath)) res.setHeader("Cache-Control", "no-cache");
+    },
+  }));
   app.get(/^\/(?!api(?:\/|$)).*/, (_req, res) => {
     res.setHeader("Cache-Control", "no-cache");
     res.sendFile(path.join(webDir, "index.html"));

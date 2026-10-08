@@ -5,9 +5,13 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { Permission } from './permission';
 
 export interface AdminInput {
   /** @minLength 7 */
   phone: string;
   label?: string;
+  email?: string;
+  permissions?: Permission[];
+  sharedWhatsapp?: boolean;
 }

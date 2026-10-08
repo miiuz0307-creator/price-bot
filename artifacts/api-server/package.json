@@ -9,7 +9,7 @@
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "pnpm run test:route-estimate && pnpm run test:surge-pricing && pnpm run test:whatsapp-latency",
-    "test:integration": "node ./build-tests.mjs && node --test \"dist-tests/*.mjs\"",
+    "test:integration": "node ./test/build.mjs && node --test --test-concurrency=1 'dist-tests/*.test.mjs'",
     "test:surge-pricing": "esbuild src/services/surge-pricing.test.mjs --bundle --platform=node --format=esm --outfile=dist/surge-pricing.test.mjs && node --test dist/surge-pricing.test.mjs",
     "test:route-estimate": "esbuild src/services/route-estimate.test.mjs --bundle --platform=node --format=esm --outfile=dist/route-estimate.test.mjs && node --test dist/route-estimate.test.mjs",
     "test:baileys-recv-patch": "node --experimental-vm-modules --test src/services/baileys-recv-patch.test.mjs",

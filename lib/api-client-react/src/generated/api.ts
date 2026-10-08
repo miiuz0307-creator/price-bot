@@ -26,24 +26,34 @@ import type {
   AdminCodeInput,
   AdminInput,
   AdminLoginInput,
+  AdminUpdate,
+  AuditEntry,
   AuthStatus,
   CurrentSession,
   DashboardSummary,
   HealthStatus,
+  InviteResult,
+  ListAuditLogParams,
   LoginAdmin,
+  LoginCodeRequest,
+  LoginCodeRequestResult,
+  LoginCodeVerify,
   LookupRequest,
   OwnerCodeBootstrapInput,
+  PinLoginInput,
   Product,
   ProductInput,
   ProductUpdate,
   SurgeStartInput,
   SurgeStatus,
+  SystemOverview,
   Target,
   TargetInput,
   TargetUpdate,
   WhatsAppGroup,
   WhatsAppMessageInput,
   WhatsAppMessageResult,
+  WhatsAppPairInput,
   WhatsAppStatus
 } from './api.schemas';
 
@@ -1101,6 +1111,78 @@ export const useCreateAdmin = <TError = ErrorType<unknown>,
       return useMutation(getCreateAdminMutationOptions(options));
     }
 
+export const getUpdateAdminUrl = (id: number,) => {
+
+
+
+
+  return `/api/admins/${id}`
+}
+
+/**
+ * @summary Update a user (details, permissions, suspend/restore, shared WhatsApp)
+ */
+export const updateAdmin = async (id: number,
+    adminUpdate: AdminUpdate, options?: Parameters<typeof customFetch>[1]): Promise<Admin> => {
+
+  return customFetch<Admin>(getUpdateAdminUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateAdminMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAdmin>>, TError,{id: number;data: BodyType<AdminUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAdmin>>, TError,{id: number;data: BodyType<AdminUpdate>}, TContext> => {
+
+const mutationKey = ['updateAdmin'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAdmin>>, {id: number;data: BodyType<AdminUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateAdmin(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAdminMutationResult = NonNullable<Awaited<ReturnType<typeof updateAdmin>>>
+    export type UpdateAdminMutationBody = BodyType<AdminUpdate>
+    export type UpdateAdminMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update a user (details, permissions, suspend/restore, shared WhatsApp)
+ */
+export const useUpdateAdmin = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAdmin>>, TError,{id: number;data: BodyType<AdminUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAdmin>>,
+        TError,
+        {id: number;data: BodyType<AdminUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateAdminMutationOptions(options));
+    }
+
 export const getDeleteAdminUrl = (id: number,) => {
 
 
@@ -1242,6 +1324,522 @@ export const useSetAdminCode = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getSetAdminCodeMutationOptions(options));
+    }
+
+export const getInviteAdminUrl = (id: number,) => {
+
+
+
+
+  return `/api/admins/${id}/invite`
+}
+
+/**
+ * @summary Send the user a WhatsApp invitation with the sign-in link
+ */
+export const inviteAdmin = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<InviteResult> => {
+
+  return customFetch<InviteResult>(getInviteAdminUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getInviteAdminMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof inviteAdmin>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof inviteAdmin>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['inviteAdmin'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof inviteAdmin>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  inviteAdmin(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type InviteAdminMutationResult = NonNullable<Awaited<ReturnType<typeof inviteAdmin>>>
+
+    export type InviteAdminMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Send the user a WhatsApp invitation with the sign-in link
+ */
+export const useInviteAdmin = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof inviteAdmin>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof inviteAdmin>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getInviteAdminMutationOptions(options));
+    }
+
+export const getRevokeAdminSessionsUrl = (id: number,) => {
+
+
+
+
+  return `/api/admins/${id}/sessions/revoke`
+}
+
+/**
+ * @summary Sign the user out on every device
+ */
+export const revokeAdminSessions = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getRevokeAdminSessionsUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRevokeAdminSessionsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeAdminSessions>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokeAdminSessions>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['revokeAdminSessions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeAdminSessions>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  revokeAdminSessions(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeAdminSessionsMutationResult = NonNullable<Awaited<ReturnType<typeof revokeAdminSessions>>>
+
+    export type RevokeAdminSessionsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Sign the user out on every device
+ */
+export const useRevokeAdminSessions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeAdminSessions>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof revokeAdminSessions>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRevokeAdminSessionsMutationOptions(options));
+    }
+
+export const getListAuditLogUrl = (params?: ListAuditLogParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/audit-log?${stringifiedParams}` : `/api/audit-log`
+}
+
+/**
+ * @summary Recent activity (users with users.manage)
+ */
+export const listAuditLog = async (params?: ListAuditLogParams, options?: Parameters<typeof customFetch>[1]): Promise<AuditEntry[]> => {
+
+  return customFetch<AuditEntry[]>(getListAuditLogUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAuditLogQueryKey = (params?: ListAuditLogParams,) => {
+    return [
+    `/api/audit-log`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListAuditLogQueryOptions = <TData = Awaited<ReturnType<typeof listAuditLog>>, TError = ErrorType<unknown>>(params?: ListAuditLogParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAuditLog>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAuditLogQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAuditLog>>> = ({ signal }) => listAuditLog(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAuditLog>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAuditLogQueryResult = NonNullable<Awaited<ReturnType<typeof listAuditLog>>>
+export type ListAuditLogQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Recent activity (users with users.manage)
+ */
+
+export function useListAuditLog<TData = Awaited<ReturnType<typeof listAuditLog>>, TError = ErrorType<unknown>>(
+ params?: ListAuditLogParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAuditLog>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAuditLogQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetSystemOverviewUrl = () => {
+
+
+
+
+  return `/api/system/overview`
+}
+
+/**
+ * @summary Owner overview of users, WhatsApp connections and problems
+ */
+export const getSystemOverview = async ( options?: Parameters<typeof customFetch>[1]): Promise<SystemOverview> => {
+
+  return customFetch<SystemOverview>(getGetSystemOverviewUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSystemOverviewQueryKey = () => {
+    return [
+    `/api/system/overview`
+    ] as const;
+    }
+
+
+export const getGetSystemOverviewQueryOptions = <TData = Awaited<ReturnType<typeof getSystemOverview>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSystemOverview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSystemOverviewQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSystemOverview>>> = ({ signal }) => getSystemOverview({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSystemOverview>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSystemOverviewQueryResult = NonNullable<Awaited<ReturnType<typeof getSystemOverview>>>
+export type GetSystemOverviewQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Owner overview of users, WhatsApp connections and problems
+ */
+
+export function useGetSystemOverview<TData = Awaited<ReturnType<typeof getSystemOverview>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSystemOverview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSystemOverviewQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRequestLoginCodeUrl = () => {
+
+
+
+
+  return `/api/auth/code/request`
+}
+
+/**
+ * @summary Send a one-time sign-in code to the user's WhatsApp
+ */
+export const requestLoginCode = async (loginCodeRequest: LoginCodeRequest, options?: Parameters<typeof customFetch>[1]): Promise<LoginCodeRequestResult> => {
+
+  return customFetch<LoginCodeRequestResult>(getRequestLoginCodeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(loginCodeRequest)
+  }
+);}
+
+
+
+
+
+export const getRequestLoginCodeMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestLoginCode>>, TError,{data: BodyType<LoginCodeRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof requestLoginCode>>, TError,{data: BodyType<LoginCodeRequest>}, TContext> => {
+
+const mutationKey = ['requestLoginCode'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestLoginCode>>, {data: BodyType<LoginCodeRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  requestLoginCode(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RequestLoginCodeMutationResult = NonNullable<Awaited<ReturnType<typeof requestLoginCode>>>
+    export type RequestLoginCodeMutationBody = BodyType<LoginCodeRequest>
+    export type RequestLoginCodeMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Send a one-time sign-in code to the user's WhatsApp
+ */
+export const useRequestLoginCode = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestLoginCode>>, TError,{data: BodyType<LoginCodeRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof requestLoginCode>>,
+        TError,
+        {data: BodyType<LoginCodeRequest>},
+        TContext
+      > => {
+      return useMutation(getRequestLoginCodeMutationOptions(options));
+    }
+
+export const getVerifyLoginCodeUrl = () => {
+
+
+
+
+  return `/api/auth/code/verify`
+}
+
+/**
+ * @summary Sign in with a one-time code received on WhatsApp
+ */
+export const verifyLoginCode = async (loginCodeVerify: LoginCodeVerify, options?: Parameters<typeof customFetch>[1]): Promise<CurrentSession> => {
+
+  return customFetch<CurrentSession>(getVerifyLoginCodeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(loginCodeVerify)
+  }
+);}
+
+
+
+
+
+export const getVerifyLoginCodeMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof verifyLoginCode>>, TError,{data: BodyType<LoginCodeVerify>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof verifyLoginCode>>, TError,{data: BodyType<LoginCodeVerify>}, TContext> => {
+
+const mutationKey = ['verifyLoginCode'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof verifyLoginCode>>, {data: BodyType<LoginCodeVerify>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  verifyLoginCode(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type VerifyLoginCodeMutationResult = NonNullable<Awaited<ReturnType<typeof verifyLoginCode>>>
+    export type VerifyLoginCodeMutationBody = BodyType<LoginCodeVerify>
+    export type VerifyLoginCodeMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Sign in with a one-time code received on WhatsApp
+ */
+export const useVerifyLoginCode = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof verifyLoginCode>>, TError,{data: BodyType<LoginCodeVerify>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof verifyLoginCode>>,
+        TError,
+        {data: BodyType<LoginCodeVerify>},
+        TContext
+      > => {
+      return useMutation(getVerifyLoginCodeMutationOptions(options));
+    }
+
+export const getLoginWithPinUrl = () => {
+
+
+
+
+  return `/api/auth/pin`
+}
+
+/**
+ * @summary Sign in with phone/email and personal code
+ */
+export const loginWithPin = async (pinLoginInput: PinLoginInput, options?: Parameters<typeof customFetch>[1]): Promise<CurrentSession> => {
+
+  return customFetch<CurrentSession>(getLoginWithPinUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(pinLoginInput)
+  }
+);}
+
+
+
+
+
+export const getLoginWithPinMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof loginWithPin>>, TError,{data: BodyType<PinLoginInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof loginWithPin>>, TError,{data: BodyType<PinLoginInput>}, TContext> => {
+
+const mutationKey = ['loginWithPin'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof loginWithPin>>, {data: BodyType<PinLoginInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  loginWithPin(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LoginWithPinMutationResult = NonNullable<Awaited<ReturnType<typeof loginWithPin>>>
+    export type LoginWithPinMutationBody = BodyType<PinLoginInput>
+    export type LoginWithPinMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Sign in with phone/email and personal code
+ */
+export const useLoginWithPin = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof loginWithPin>>, TError,{data: BodyType<PinLoginInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof loginWithPin>>,
+        TError,
+        {data: BodyType<PinLoginInput>},
+        TContext
+      > => {
+      return useMutation(getLoginWithPinMutationOptions(options));
     }
 
 export const getListLoginAdminsUrl = () => {
@@ -1911,6 +2509,77 @@ export const useConnectWhatsApp = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getConnectWhatsAppMutationOptions(options));
+    }
+
+export const getPairWhatsAppUrl = () => {
+
+
+
+
+  return `/api/integration/whatsapp/pair`
+}
+
+/**
+ * @summary Connect WhatsApp with a pairing code instead of a QR scan
+ */
+export const pairWhatsApp = async (whatsAppPairInput: WhatsAppPairInput, options?: Parameters<typeof customFetch>[1]): Promise<WhatsAppStatus> => {
+
+  return customFetch<WhatsAppStatus>(getPairWhatsAppUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(whatsAppPairInput)
+  }
+);}
+
+
+
+
+
+export const getPairWhatsAppMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pairWhatsApp>>, TError,{data: BodyType<WhatsAppPairInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof pairWhatsApp>>, TError,{data: BodyType<WhatsAppPairInput>}, TContext> => {
+
+const mutationKey = ['pairWhatsApp'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof pairWhatsApp>>, {data: BodyType<WhatsAppPairInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  pairWhatsApp(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PairWhatsAppMutationResult = NonNullable<Awaited<ReturnType<typeof pairWhatsApp>>>
+    export type PairWhatsAppMutationBody = BodyType<WhatsAppPairInput>
+    export type PairWhatsAppMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Connect WhatsApp with a pairing code instead of a QR scan
+ */
+export const usePairWhatsApp = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pairWhatsApp>>, TError,{data: BodyType<WhatsAppPairInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof pairWhatsApp>>,
+        TError,
+        {data: BodyType<WhatsAppPairInput>},
+        TContext
+      > => {
+      return useMutation(getPairWhatsAppMutationOptions(options));
     }
 
 export const getDisconnectWhatsAppUrl = () => {
