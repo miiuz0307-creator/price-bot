@@ -1,4 +1,4 @@
-import { pool } from "@workspace/db";
+import { migrationsReady, pool } from "@workspace/db";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { whatsappWeb } from "./services/whatsapp-web";
@@ -16,6 +16,12 @@ const port = Number(rawPort);
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
+
+// Schema first: never serve requests against an outdated database.
+await migrationsReady.catch((err) => {
+  logger.fatal({ err }, "Database migration failed; refusing to start");
+  process.exit(1);
+});
 
 const server = app.listen(port, (err) => {
   if (err) {

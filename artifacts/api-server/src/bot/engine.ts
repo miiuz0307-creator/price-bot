@@ -60,6 +60,7 @@ import {
   SetAdminCodeBody,
 } from "@workspace/api-zod";
 import {
+  migrationsReady,
   db,
   priceBotAdmins,
   priceBotAbbreviations,
@@ -319,6 +320,7 @@ whatsappWeb.registerMessageHandler(async (message) => {
 });
 
 export const priceBotReady: Promise<void> = (async () => {
+  await migrationsReady;
   // One-time, idempotent repair of products saved with "₪" by the old web forms.
   await db.update(priceBotProducts).set({ currency: "ILS" })
     .where(sql`trim(${priceBotProducts.currency}) in ('₪', 'ils', 'nis', 'NIS', 'ש"ח', 'ש״ח', 'שח', 'שקל')`);
