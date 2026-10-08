@@ -46,7 +46,7 @@ export const migrationsReady: Promise<void> = process.env.DB_AUTO_MIGRATE === "0
 migrationsReady.catch(() => undefined);
 
 export { runMigrations, migrations } from "./migrations";
-export { importFromDatabase } from "./import";
+export { importFromDatabase, importFromJson } from "./import";
 /** Separate pool for maintenance tasks/tests (e.g. another database). */
 export const createPool = (connectionString: string) => new Pool({ connectionString, max: 2 });
 export * from "./schema";

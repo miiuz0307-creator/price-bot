@@ -57,3 +57,44 @@ test("one-time import from an old (Replit-era) database", { timeout: 60_000 }, a
   assert.equal((await importFromDatabase(urlFor("import_src").replace(/(\?|$)/u, "?sslmode=disable$1"), target)).imported, false);
   await target.end();
 });
+
+test("one-time import from a JSON export (psql json_agg, as run in the Replit shell)", { timeout: 60_000 }, async () => {
+  const { createPool, importFromJson, migrations, runMigrations } = await import("@workspace/db");
+  const baseUrl = process.env.DATABASE_URL!;
+  const urlFor = (name: string) => baseUrl.replace(/\/[^/?]+(\?|$)/u, `/${name}$1`);
+  const admin = createPool(baseUrl);
+  for (const name of ["json_src", "json_dst"]) {
+    await admin.query(`DROP DATABASE IF EXISTS ${name}`);
+    await admin.query(`CREATE DATABASE ${name}`);
+  }
+  await admin.end();
+  const source = createPool(urlFor("json_src"));
+  await source.query(migrations.find((migration) => migration.id === "0000_baseline")!.sql);
+  await source.query(`INSERT INTO price_bot_admins (id, phone, label, role, code_hash) VALUES (1, '0504107826', 'מיכאל', 'owner', 'scrypt$a$b')`);
+  await source.query(`INSERT INTO price_bot_products (id, name, price, aliases, price_matrix) VALUES (7, 'בני ברק ⇔ ירושלים', 160.5, ARRAY['בב ים','ים בב'], '[160,300,190,360,210,400,230,440]')`);
+  await source.query(`INSERT INTO price_bot_targets (admin_id, kind, identifier, label) VALUES (1, 'group', '1203', 'קבוצה')`);
+  // Exactly the export command given to the owner (one JSON object, table → rows).
+  const { rows: [{ data }] } = await source.query(`SELECT json_build_object(
+    'price_bot_admins', (SELECT coalesce(json_agg(t), '[]') FROM price_bot_admins t),
+    'price_bot_products', (SELECT coalesce(json_agg(t), '[]') FROM price_bot_products t),
+    'price_bot_abbreviations', (SELECT coalesce(json_agg(t), '[]') FROM price_bot_abbreviations t),
+    'price_bot_targets', (SELECT coalesce(json_agg(t), '[]') FROM price_bot_targets t),
+    'price_bot_lookups', (SELECT coalesce(json_agg(t), '[]') FROM price_bot_lookups t),
+    'price_bot_surge_settings', (SELECT coalesce(json_agg(t), '[]') FROM price_bot_surge_settings t)) AS data`);
+  await source.end();
+  const payload = JSON.parse(JSON.stringify(data));
+
+  const target = createPool(urlFor("json_dst"));
+  await runMigrations(target);
+  await target.query(`INSERT INTO price_bot_admins (phone, label, role) VALUES ('0504107826', 'מיכאל', 'owner')`);
+  const result = await importFromJson(payload, target);
+  assert.equal(result.imported, true);
+  const product = (await target.query("SELECT * FROM price_bot_products WHERE id = 7")).rows[0];
+  assert.deepEqual(product.price_matrix, [160, 300, 190, 360, 210, 400, 230, 440]);
+  assert.deepEqual(product.aliases, ["בב ים", "ים בב"]);
+  assert.equal(Number(product.price), 160.5);
+  assert.equal((await target.query("SELECT code_hash FROM price_bot_admins WHERE phone = '0504107826'")).rows[0].code_hash, "scrypt$a$b");
+  assert.equal((await target.query("SELECT count(*)::int AS n FROM price_bot_targets")).rows[0].n, 1);
+  assert.equal((await importFromJson(payload, target)).imported, false, "never imports twice");
+  await target.end();
+});

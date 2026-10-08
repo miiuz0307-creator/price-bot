@@ -21,32 +21,60 @@ const tables = [
 
 type Log = (message: string) => void;
 
+type TableReader = {
+  columns(table: string): Promise<Set<string>>;
+  rows(table: string, columns: string[]): Promise<Record<string, any>[]>;
+  close(): Promise<void>;
+};
+
+/** Source = another PostgreSQL database reachable from this server. */
 export async function importFromDatabase(sourceUrl: string, target: pg.Pool, log: Log = () => undefined) {
+  const ssl = /sslmode=disable/u.test(sourceUrl) || /localhost|127\.0\.0\.1/u.test(sourceUrl) ? undefined : { rejectUnauthorized: false };
+  const source = new pg.Pool({ connectionString: sourceUrl, ssl, max: 2, connectionTimeoutMillis: 15_000 });
+  return importData({
+    columns: async (table) => new Set((await columnsOf(source, table)).keys()),
+    rows: async (table, columns) => (await source.query(`SELECT ${columns.map(quote).join(", ")} FROM ${table}${table === "price_bot_admins" ? " ORDER BY id" : ""}`)).rows,
+    close: () => source.end().catch(() => undefined),
+  }, target, log);
+}
+
+/** Source = JSON export: { table_name: [row, ...] } with snake_case columns (psql json_agg). */
+export async function importFromJson(data: Record<string, unknown>, target: pg.Pool, log: Log = () => undefined) {
+  const tableRows = (table: string) => (Array.isArray(data[table]) ? data[table] : []) as Record<string, any>[];
+  return importData({
+    columns: async (table) => new Set(tableRows(table).flatMap((row) => Object.keys(row))),
+    rows: async (table, columns) => tableRows(table).map((row) => Object.fromEntries(columns.map((column) => [column, row[column] ?? null]))),
+    close: async () => undefined,
+  }, target, log);
+}
+
+async function importData(source: TableReader, target: pg.Pool, log: Log) {
   const client = await target.connect();
   try {
     const { rows: [counts] } = await client.query<{ products: number }>(
       "SELECT (SELECT count(*) FROM price_bot_products)::int AS products",
     );
     if (counts.products > 0) {
-      log("Data import skipped: this database already has data (remove IMPORT_FROM_DATABASE_URL)");
+      log("Data import skipped: this database already has products");
+      await source.close();
       return { imported: false as const };
     }
-    const ssl = /sslmode=disable/u.test(sourceUrl) || /localhost|127\.0\.0\.1/u.test(sourceUrl) ? undefined : { rejectUnauthorized: false };
-    const source = new pg.Pool({ connectionString: sourceUrl, ssl, max: 2, connectionTimeoutMillis: 15_000 });
     try {
       const summary: Record<string, number> = {};
       await client.query("BEGIN");
+      const sourceAdminColumns = await source.columns("price_bot_admins");
       // Administrators: upsert by phone, remember source id → target id.
       const adminIds = new Map<number, number>();
       {
-        const { rows: admins } = await source.query("SELECT * FROM price_bot_admins ORDER BY id");
+        const adminColumns = ["id", "phone", "label", "role", "active", "code_hash", "added_at"].filter((column) => sourceAdminColumns.has(column));
+        const admins = await source.rows("price_bot_admins", adminColumns);
         for (const admin of admins) {
           const { rows: [row] } = await client.query<{ id: number }>(
             `INSERT INTO price_bot_admins (phone, label, role, active, code_hash, added_at) VALUES ($1, $2, $3, $4, $5, $6)
              ON CONFLICT (phone) DO UPDATE SET label = EXCLUDED.label, role = EXCLUDED.role, active = EXCLUDED.active,
                code_hash = COALESCE(EXCLUDED.code_hash, price_bot_admins.code_hash)
              RETURNING id`,
-            [admin.phone, admin.label, admin.role, admin.active, admin.code_hash, admin.added_at],
+            [admin.phone, admin.label ?? "מנהל", admin.role ?? "admin", admin.active ?? true, admin.code_hash ?? null, admin.added_at ?? new Date()],
           );
           adminIds.set(admin.id, row.id);
         }
@@ -54,11 +82,11 @@ export async function importFromDatabase(sourceUrl: string, target: pg.Pool, log
       }
       for (const table of tables) {
         if (table === "price_bot_admins") continue;
-        const sourceColumns = await columnsOf(source, table);
+        const sourceColumns = await source.columns(table);
         if (!sourceColumns.size) { summary[table] = 0; continue; }
         const targetColumns = await columnsOf(client, table);
         const columns = [...targetColumns.keys()].filter((column) => sourceColumns.has(column));
-        const { rows: sourceRows } = await source.query(`SELECT ${columns.map(quote).join(", ")} FROM ${table}`);
+        const sourceRows = await source.rows(table, columns);
         // Translate administrator references; drop rows of administrators that no longer exist.
         const rows = columns.includes("admin_id")
           ? sourceRows.flatMap((row) => row.admin_id === null ? [row] : adminIds.has(row.admin_id) ? [{ ...row, admin_id: adminIds.get(row.admin_id) }] : [])
@@ -89,7 +117,7 @@ export async function importFromDatabase(sourceUrl: string, target: pg.Pool, log
       await client.query("ROLLBACK").catch(() => undefined);
       throw new Error(`Data import failed (nothing was changed): ${(error as Error).message}`);
     } finally {
-      await source.end().catch(() => undefined);
+      await source.close();
     }
   } finally {
     client.release();

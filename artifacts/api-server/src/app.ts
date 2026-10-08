@@ -1,5 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { timingSafeEqual } from "node:crypto";
+import { importFromJson, migrationsReady, pool } from "@workspace/db";
 import express, { type ErrorRequestHandler, type Express } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -33,6 +35,28 @@ app.use(
     },
   }),
 );
+// One-time data move from the old server: POST a JSON export with the secret
+// IMPORT_TOKEN (set in the hosting variables, removed afterwards). Mounted before
+// the global JSON parser because the export is larger than its 100 KB limit.
+app.post("/api/system/import", express.json({ limit: "100mb" }), async (req, res, next) => {
+  try {
+    const expected = process.env.IMPORT_TOKEN ?? "";
+    const given = String(req.get("x-import-token") ?? "");
+    const valid = expected.length >= 24 && given.length === expected.length
+      && timingSafeEqual(Buffer.from(given), Buffer.from(expected));
+    if (!valid) {
+      res.status(403).json({ error: "import disabled or wrong token" });
+      return;
+    }
+    await migrationsReady;
+    const messages: string[] = [];
+    const result = await importFromJson(req.body ?? {}, pool, (message) => { messages.push(message); logger.info(message); });
+    res.status(result.imported ? 200 : 409).json({ ...result, messages });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.use(cors({ credentials: true, origin: true }));
 app.use(cookieParser());
 app.use(express.json());
