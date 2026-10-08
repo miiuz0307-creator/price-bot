@@ -83,6 +83,28 @@ import { messageCredit, messageHeader, formatProductResponse, formatHourlyPricin
 import { normalizeCurrency, productDto, adminDto, targetDto, lookupRequestDto } from "../routes/dto";
 import { primaryOwnerPhone, primaryOwnerLabel, ownerBootstrapAllowed, getOrCreateOwnerAdmin } from "../services/owner";
 
+/**
+ * Single place names the bot knows: both endpoints of every catalog route
+ * ("בני ברק ⇔ ירושלים" → "בני ברק", "ירושלים"), single-place aliases and
+ * custom shortcuts. Aliases that spell a whole route ("בב ים") are left out:
+ * read as one place they hid the second endpoint, so a group quote "בב ים 260"
+ * was ignored and "מ בני ברק ירושלים" never showed a live surge price.
+ */
+export function catalogPlaceNames(
+  products: readonly { name: string; aliases: string[] }[],
+  abbreviations: readonly { shortcut: string }[],
+) {
+  return [
+    ...products.flatMap((product) => {
+      const routeVariants = new Set(normalizedSearchVariants(product.name));
+      const placeAliases = product.aliases.filter((alias) =>
+        !normalizedSearchVariants(alias).some((variant) => routeVariants.has(variant)));
+      return [product.name, ...placeAliases].flatMap((name) => name.split("⇔").map((place) => place.trim()).filter(Boolean));
+    }),
+    ...abbreviations.map((row) => row.shortcut),
+  ];
+}
+
 export async function captureSurgeQuote({ adminId, chatId, body, isGroup, sentAt }: IncomingWhatsAppMessage) {
   // The quote parser only accepts two-to-four-digit prices. Avoid a database
   // lookup for ordinary group chatter and price requests without an amount.
@@ -95,10 +117,7 @@ export async function captureSurgeQuote({ adminId, chatId, body, isGroup, sentAt
     db.select().from(priceBotProducts).where(eq(priceBotProducts.active, true)),
     db.select({ shortcut: priceBotAbbreviations.shortcut, expansion: priceBotAbbreviations.expansion }).from(priceBotAbbreviations),
   ]);
-  const knownPlaces = [
-    ...products.flatMap((product) => [product.name, ...product.aliases].flatMap((name) => name.split("⇔").map((place) => place.trim()))),
-    ...abbreviations.map((row) => row.shortcut),
-  ];
+  const knownPlaces = catalogPlaceNames(products, abbreviations);
   const matchedQuotes = parseSurgeQuotes(body, knownPlaces).flatMap((quote) => {
     const product = matchSurgeProduct(quote, products, abbreviations);
     const directionKey = surgeDirectionKey(quote, abbreviations);
@@ -215,7 +234,12 @@ export async function processPriceBotMessage({
         : findClosestProduct(products, expandedQuery, !route);
       if (result?.kind === "match") {
         matched = true;
-        const surges = !result.corrected ? await currentSurgeOffers(adminId, result.product, route, abbreviations) : [];
+        // Surge direction uses the full place list (route endpoints too), so a lookup
+        // typed with multi-word city names finds live surge prices. Matching and
+        // spelling correction above are unchanged.
+        const surgeRawRoute = rawRoute ?? parseUnlistedRoute(query, catalogPlaceNames(allProducts, abbreviations));
+        const surgeRoute = surgeRawRoute ? { origin: expand(surgeRawRoute.origin), destination: expand(surgeRawRoute.destination) } : null;
+        const surges = !result.corrected ? await currentSurgeOffers(adminId, result.product, surgeRoute, abbreviations) : [];
         const surgeText = sortSurgeOffers(surges).map((offer) => {
           const clock = (date: Date) => date.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" });
           const vehicle = {

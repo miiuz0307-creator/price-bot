@@ -58,6 +58,10 @@ jobs:
         run: scripts/ci/run.sh "Database schema" pnpm --filter @workspace/db run setup-test-db
       - name: Bot reply golden master
         run: scripts/ci/run.sh "Bot replies" pnpm --filter @workspace/api-server run test:integration
+        env:
+          # Intentional reply changes: put [update-snapshot] in the commit message (work branches only),
+          # then review the committed snapshot diff.
+          UPDATE_SNAPSHOT: ${{ github.event_name == 'push' && github.ref != 'refs/heads/main' && contains(github.event.head_commit.message, '[update-snapshot]') && '1' || '' }}
       - name: Commit generated files (work branches)
         if: github.event_name == 'push' && github.ref != 'refs/heads/main'
         run: |
