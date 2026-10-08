@@ -283,7 +283,15 @@ export const ListAdminsResponseItem = zod.object({
   "label": zod.string(),
   "role": zod.enum(['owner', 'admin']),
   "active": zod.boolean(),
-  "addedAt": zod.string()
+  "addedAt": zod.string(),
+  "email": zod.string().nullable(),
+  "permissions": zod.array(zod.enum(['catalog.edit', 'targets.manage', 'lookups.manage', 'surge.manage', 'whatsapp.manage', 'users.manage'])),
+  "sharedWhatsapp": zod.boolean(),
+  "whatsappOwnerId": zod.int().nullable(),
+  "hasPin": zod.boolean(),
+  "invitedAt": zod.string().nullable(),
+  "lastLoginAt": zod.string().nullable(),
+  "lastSeenAt": zod.string().nullable()
 })
 export const ListAdminsResponse = zod.array(ListAdminsResponseItem)
 
@@ -297,7 +305,10 @@ export const createAdminBodyPhoneMin = 7;
 
 export const CreateAdminBody = zod.object({
   "phone": zod.string().min(createAdminBodyPhoneMin),
-  "label": zod.string().optional()
+  "label": zod.string().optional(),
+  "email": zod.string().optional(),
+  "permissions": zod.array(zod.enum(['catalog.edit', 'targets.manage', 'lookups.manage', 'surge.manage', 'whatsapp.manage', 'users.manage'])).optional(),
+  "sharedWhatsapp": zod.boolean().optional()
 })
 
 export const CreateAdminResponse = zod.object({
@@ -306,7 +317,53 @@ export const CreateAdminResponse = zod.object({
   "label": zod.string(),
   "role": zod.enum(['owner', 'admin']),
   "active": zod.boolean(),
-  "addedAt": zod.string()
+  "addedAt": zod.string(),
+  "email": zod.string().nullable(),
+  "permissions": zod.array(zod.enum(['catalog.edit', 'targets.manage', 'lookups.manage', 'surge.manage', 'whatsapp.manage', 'users.manage'])),
+  "sharedWhatsapp": zod.boolean(),
+  "whatsappOwnerId": zod.int().nullable(),
+  "hasPin": zod.boolean(),
+  "invitedAt": zod.string().nullable(),
+  "lastLoginAt": zod.string().nullable(),
+  "lastSeenAt": zod.string().nullable()
+})
+
+
+/**
+ * @summary Update a user (details, permissions, suspend/restore, shared WhatsApp)
+ */
+export const UpdateAdminParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const updateAdminBodyPhoneMin = 7;
+
+
+
+export const UpdateAdminBody = zod.object({
+  "phone": zod.string().min(updateAdminBodyPhoneMin).optional(),
+  "label": zod.string().optional(),
+  "email": zod.string().nullish(),
+  "permissions": zod.array(zod.enum(['catalog.edit', 'targets.manage', 'lookups.manage', 'surge.manage', 'whatsapp.manage', 'users.manage'])).optional(),
+  "active": zod.boolean().optional(),
+  "sharedWhatsapp": zod.boolean().optional()
+})
+
+export const UpdateAdminResponse = zod.object({
+  "id": zod.int(),
+  "phone": zod.string(),
+  "label": zod.string(),
+  "role": zod.enum(['owner', 'admin']),
+  "active": zod.boolean(),
+  "addedAt": zod.string(),
+  "email": zod.string().nullable(),
+  "permissions": zod.array(zod.enum(['catalog.edit', 'targets.manage', 'lookups.manage', 'surge.manage', 'whatsapp.manage', 'users.manage'])),
+  "sharedWhatsapp": zod.boolean(),
+  "whatsappOwnerId": zod.int().nullable(),
+  "hasPin": zod.boolean(),
+  "invitedAt": zod.string().nullable(),
+  "lastLoginAt": zod.string().nullable(),
+  "lastSeenAt": zod.string().nullable()
 })
 
 
@@ -335,6 +392,170 @@ export const SetAdminCodeBody = zod.object({
 })
 
 export const SetAdminCodeResponse = zod.void()
+
+
+/**
+ * @summary Send the user a WhatsApp invitation with the sign-in link
+ */
+export const InviteAdminParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const InviteAdminResponse = zod.object({
+  "sent": zod.boolean(),
+  "link": zod.string()
+})
+
+
+/**
+ * @summary Sign the user out on every device
+ */
+export const RevokeAdminSessionsParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const RevokeAdminSessionsResponse = zod.void()
+
+
+/**
+ * @summary Recent activity (users with users.manage)
+ */
+export const listAuditLogQueryLimitMax = 500;
+
+
+
+export const ListAuditLogQueryParams = zod.object({
+  "limit": zod.coerce.number().int().min(1).max(listAuditLogQueryLimitMax).optional(),
+  "actorId": zod.coerce.number().int().optional()
+})
+
+export const ListAuditLogResponseItem = zod.object({
+  "id": zod.int(),
+  "actorId": zod.int().nullable(),
+  "actorLabel": zod.string().nullable(),
+  "action": zod.string(),
+  "targetType": zod.string(),
+  "targetId": zod.string(),
+  "details": zod.record(zod.string(), zod.unknown()),
+  "createdAt": zod.string()
+})
+export const ListAuditLogResponse = zod.array(ListAuditLogResponseItem)
+
+
+/**
+ * @summary Owner overview of users, WhatsApp connections and problems
+ */
+export const GetSystemOverviewResponse = zod.object({
+  "activeUsers": zod.int(),
+  "suspendedUsers": zod.int(),
+  "connections": zod.array(zod.object({
+  "adminId": zod.int(),
+  "label": zod.string(),
+  "connected": zod.boolean(),
+  "connectionState": zod.string(),
+  "phoneNumber": zod.string().nullable(),
+  "lastError": zod.string().nullable(),
+  "sharedUsers": zod.int()
+})),
+  "pendingLookups": zod.int(),
+  "activeSurges": zod.int(),
+  "recentProblems": zod.array(zod.object({
+  "id": zod.int(),
+  "actorId": zod.int().nullable(),
+  "actorLabel": zod.string().nullable(),
+  "action": zod.string(),
+  "targetType": zod.string(),
+  "targetId": zod.string(),
+  "details": zod.record(zod.string(), zod.unknown()),
+  "createdAt": zod.string()
+}))
+})
+
+
+/**
+ * @summary Send a one-time sign-in code to the user's WhatsApp
+ */
+export const requestLoginCodeBodyIdentifierMin = 3;
+export const requestLoginCodeBodyIdentifierMax = 200;
+
+
+
+export const RequestLoginCodeBody = zod.object({
+  "identifier": zod.string().min(requestLoginCodeBodyIdentifierMin).max(requestLoginCodeBodyIdentifierMax)
+})
+
+export const RequestLoginCodeResponse = zod.object({
+  "sent": zod.boolean(),
+  "destination": zod.string().nullable()
+})
+
+
+/**
+ * @summary Sign in with a one-time code received on WhatsApp
+ */
+export const verifyLoginCodeBodyIdentifierMin = 3;
+export const verifyLoginCodeBodyIdentifierMax = 200;
+
+export const verifyLoginCodeBodyCodeRegExp = new RegExp('^\\d{6}$');
+
+
+export const VerifyLoginCodeBody = zod.object({
+  "identifier": zod.string().min(verifyLoginCodeBodyIdentifierMin).max(verifyLoginCodeBodyIdentifierMax),
+  "code": zod.string().regex(verifyLoginCodeBodyCodeRegExp)
+})
+
+export const VerifyLoginCodeResponse = zod.object({
+  "admin": zod.object({
+  "id": zod.int(),
+  "phone": zod.string(),
+  "label": zod.string(),
+  "role": zod.enum(['owner', 'admin']),
+  "active": zod.boolean(),
+  "addedAt": zod.string(),
+  "email": zod.string().nullable(),
+  "permissions": zod.array(zod.enum(['catalog.edit', 'targets.manage', 'lookups.manage', 'surge.manage', 'whatsapp.manage', 'users.manage'])),
+  "sharedWhatsapp": zod.boolean(),
+  "whatsappOwnerId": zod.int().nullable(),
+  "hasPin": zod.boolean(),
+  "invitedAt": zod.string().nullable(),
+  "lastLoginAt": zod.string().nullable(),
+  "lastSeenAt": zod.string().nullable()
+})
+})
+
+
+/**
+ * @summary Sign in with phone/email and personal code
+ */
+export const loginWithPinBodyIdentifierMin = 3;
+export const loginWithPinBodyIdentifierMax = 200;
+
+export const loginWithPinBodyCodeRegExp = new RegExp('^\\d{4,8}$');
+
+
+export const LoginWithPinBody = zod.object({
+  "identifier": zod.string().min(loginWithPinBodyIdentifierMin).max(loginWithPinBodyIdentifierMax),
+  "code": zod.string().regex(loginWithPinBodyCodeRegExp)
+})
+
+export const LoginWithPinResponse = zod.object({
+  "admin": zod.object({
+  "id": zod.int(),
+  "phone": zod.string(),
+  "label": zod.string(),
+  "role": zod.enum(['owner', 'admin']),
+  "active": zod.boolean(),
+  "addedAt": zod.string(),
+  "email": zod.string().nullable(),
+  "permissions": zod.array(zod.enum(['catalog.edit', 'targets.manage', 'lookups.manage', 'surge.manage', 'whatsapp.manage', 'users.manage'])),
+  "sharedWhatsapp": zod.boolean(),
+  "whatsappOwnerId": zod.int().nullable(),
+  "hasPin": zod.boolean(),
+  "invitedAt": zod.string().nullable(),
+  "lastLoginAt": zod.string().nullable(),
+  "lastSeenAt": zod.string().nullable()
+})
+})
 
 
 /**
@@ -374,7 +595,15 @@ export const LoginAdminResponse = zod.object({
   "label": zod.string(),
   "role": zod.enum(['owner', 'admin']),
   "active": zod.boolean(),
-  "addedAt": zod.string()
+  "addedAt": zod.string(),
+  "email": zod.string().nullable(),
+  "permissions": zod.array(zod.enum(['catalog.edit', 'targets.manage', 'lookups.manage', 'surge.manage', 'whatsapp.manage', 'users.manage'])),
+  "sharedWhatsapp": zod.boolean(),
+  "whatsappOwnerId": zod.int().nullable(),
+  "hasPin": zod.boolean(),
+  "invitedAt": zod.string().nullable(),
+  "lastLoginAt": zod.string().nullable(),
+  "lastSeenAt": zod.string().nullable()
 })
 })
 
@@ -396,7 +625,15 @@ export const BootstrapOwnerCodeResponse = zod.object({
   "label": zod.string(),
   "role": zod.enum(['owner', 'admin']),
   "active": zod.boolean(),
-  "addedAt": zod.string()
+  "addedAt": zod.string(),
+  "email": zod.string().nullable(),
+  "permissions": zod.array(zod.enum(['catalog.edit', 'targets.manage', 'lookups.manage', 'surge.manage', 'whatsapp.manage', 'users.manage'])),
+  "sharedWhatsapp": zod.boolean(),
+  "whatsappOwnerId": zod.int().nullable(),
+  "hasPin": zod.boolean(),
+  "invitedAt": zod.string().nullable(),
+  "lastLoginAt": zod.string().nullable(),
+  "lastSeenAt": zod.string().nullable()
 })
 })
 
@@ -411,7 +648,15 @@ export const GetCurrentSessionResponse = zod.object({
   "label": zod.string(),
   "role": zod.enum(['owner', 'admin']),
   "active": zod.boolean(),
-  "addedAt": zod.string()
+  "addedAt": zod.string(),
+  "email": zod.string().nullable(),
+  "permissions": zod.array(zod.enum(['catalog.edit', 'targets.manage', 'lookups.manage', 'surge.manage', 'whatsapp.manage', 'users.manage'])),
+  "sharedWhatsapp": zod.boolean(),
+  "whatsappOwnerId": zod.int().nullable(),
+  "hasPin": zod.boolean(),
+  "invitedAt": zod.string().nullable(),
+  "lastLoginAt": zod.string().nullable(),
+  "lastSeenAt": zod.string().nullable()
 })
 })
 
@@ -453,6 +698,30 @@ export const GetWhatsAppStatusResponse = zod.object({
  * @summary Begin or restart pairing for the current administrator's WhatsApp account
  */
 export const ConnectWhatsAppResponse = zod.object({
+  "connected": zod.boolean(),
+  "provider": zod.string(),
+  "phoneNumber": zod.string().nullable(),
+  "webhookConfigured": zod.boolean(),
+  "connectionState": zod.enum(['disconnected', 'initializing', 'qr_ready', 'pairing_code_ready', 'connected', 'error']),
+  "qrCode": zod.string().nullable(),
+  "pairingCode": zod.string().nullable(),
+  "lastError": zod.string().nullable()
+})
+
+
+/**
+ * @summary Connect WhatsApp with a pairing code instead of a QR scan
+ */
+export const pairWhatsAppBodyPhoneNumberMin = 9;
+export const pairWhatsAppBodyPhoneNumberMax = 20;
+
+
+
+export const PairWhatsAppBody = zod.object({
+  "phoneNumber": zod.string().min(pairWhatsAppBodyPhoneNumberMin).max(pairWhatsAppBodyPhoneNumberMax)
+})
+
+export const PairWhatsAppResponse = zod.object({
   "connected": zod.boolean(),
   "provider": zod.string(),
   "phoneNumber": zod.string().nullable(),

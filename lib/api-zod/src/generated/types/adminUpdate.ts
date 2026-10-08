@@ -7,11 +7,13 @@
  */
 import type { Permission } from './permission';
 
-export interface AdminInput {
+export interface AdminUpdate {
   /** @minLength 7 */
-  phone: string;
+  phone?: string;
   label?: string;
-  email?: string;
+  /** @nullable */
+  email?: string | null;
   permissions?: Permission[];
+  active?: boolean;
   sharedWhatsapp?: boolean;
 }

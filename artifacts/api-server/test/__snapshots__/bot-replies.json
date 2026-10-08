@@ -152,9 +152,9 @@
     },
     "not a target": null,
     "management by admin": {
-      "matched": true,
+      "matched": false,
       "shouldReply": true,
-      "responseText": "הגישה לממשק הניהול מאושרת. פתח/י את קישור הניהול המאובטח שלך."
+      "responseText": "אין הרשאת ניהול למספר זה."
     },
     "management by customer": {
       "matched": false,
@@ -432,7 +432,7 @@
     {
       "from": "972521234567",
       "body": "ניהול",
-      "matched": true,
+      "matched": false,
       "has_estimate": false
     },
     {

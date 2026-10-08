@@ -112,6 +112,18 @@ export interface ProductUpdate {
   active?: boolean;
 }
 
+export type Permission = typeof Permission[keyof typeof Permission];
+
+
+export const Permission = {
+  catalogedit: 'catalog.edit',
+  targetsmanage: 'targets.manage',
+  lookupsmanage: 'lookups.manage',
+  surgemanage: 'surge.manage',
+  whatsappmanage: 'whatsapp.manage',
+  usersmanage: 'users.manage',
+} as const;
+
 export type AdminRole = typeof AdminRole[keyof typeof AdminRole];
 
 
@@ -127,12 +139,122 @@ export interface Admin {
   role: AdminRole;
   active: boolean;
   addedAt: string;
+  /** @nullable */
+  email: string | null;
+  permissions: Permission[];
+  sharedWhatsapp: boolean;
+  /** @nullable */
+  whatsappOwnerId: number | null;
+  hasPin: boolean;
+  /** @nullable */
+  invitedAt: string | null;
+  /** @nullable */
+  lastLoginAt: string | null;
+  /** @nullable */
+  lastSeenAt: string | null;
 }
 
 export interface AdminInput {
   /** @minLength 7 */
   phone: string;
   label?: string;
+  email?: string;
+  permissions?: Permission[];
+  sharedWhatsapp?: boolean;
+}
+
+export interface AdminUpdate {
+  /** @minLength 7 */
+  phone?: string;
+  label?: string;
+  /** @nullable */
+  email?: string | null;
+  permissions?: Permission[];
+  active?: boolean;
+  sharedWhatsapp?: boolean;
+}
+
+export interface InviteResult {
+  sent: boolean;
+  link: string;
+}
+
+export type AuditEntryDetails = { [key: string]: unknown };
+
+export interface AuditEntry {
+  id: number;
+  /** @nullable */
+  actorId: number | null;
+  /** @nullable */
+  actorLabel: string | null;
+  action: string;
+  targetType: string;
+  targetId: string;
+  details: AuditEntryDetails;
+  createdAt: string;
+}
+
+export interface SystemConnection {
+  adminId: number;
+  label: string;
+  connected: boolean;
+  connectionState: string;
+  /** @nullable */
+  phoneNumber: string | null;
+  /** @nullable */
+  lastError: string | null;
+  sharedUsers: number;
+}
+
+export interface SystemOverview {
+  activeUsers: number;
+  suspendedUsers: number;
+  connections: SystemConnection[];
+  pendingLookups: number;
+  activeSurges: number;
+  recentProblems: AuditEntry[];
+}
+
+export interface LoginCodeRequest {
+  /**
+     * @minLength 3
+     * @maxLength 200
+     */
+  identifier: string;
+}
+
+export interface LoginCodeRequestResult {
+  sent: boolean;
+  /** @nullable */
+  destination: string | null;
+}
+
+export interface LoginCodeVerify {
+  /**
+     * @minLength 3
+     * @maxLength 200
+     */
+  identifier: string;
+  /** @pattern ^\d{6}$ */
+  code: string;
+}
+
+export interface PinLoginInput {
+  /**
+     * @minLength 3
+     * @maxLength 200
+     */
+  identifier: string;
+  /** @pattern ^\d{4,8}$ */
+  code: string;
+}
+
+export interface WhatsAppPairInput {
+  /**
+     * @minLength 9
+     * @maxLength 20
+     */
+  phoneNumber: string;
 }
 
 export interface AdminCodeInput {
@@ -277,4 +399,13 @@ export interface LookupRequest {
   createdAt: string;
   estimate: RouteEstimate | null;
 }
+
+export type ListAuditLogParams = {
+/**
+ * @minimum 1
+ * @maximum 500
+ */
+limit?: number;
+actorId?: number;
+};
 
