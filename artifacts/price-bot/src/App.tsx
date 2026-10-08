@@ -373,7 +373,7 @@ function Dashboard() {
       data: {
         name,
         price,
-        currency: '₪',
+        currency: 'ILS',
         aliases: [...new Set([name, selectedLookupRequest.query.trim()])],
         active: true,
       },
@@ -487,7 +487,7 @@ function StatCard({ label, value, detail, icon: Icon, tone }: { label: string; v
 }
 
 type ProductForm = { name: string; price: string; currency: string; aliases: string; active: boolean };
-const blankProduct: ProductForm = { name: '', price: '', currency: '₪', aliases: '', active: true };
+const blankProduct: ProductForm = { name: '', price: '', currency: 'ILS', aliases: '', active: true };
 
 function normalizedProductName(value: string) {
   return value
@@ -553,7 +553,7 @@ function ProductsPage() {
   const openEdit = (product: Product) => { setEditing(product); setForm({ name: product.name, price: String(product.price), currency: product.currency, aliases: product.aliases.join(', '), active: product.active }); setFeedback(null); setModal(true); };
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    const data = { name: form.name.trim(), price: Number(form.price), currency: form.currency.trim() || '₪', aliases: form.aliases.split(',').map((alias) => alias.trim()).filter(Boolean), active: form.active };
+    const data = { name: form.name.trim(), price: Number(form.price), currency: form.currency.trim() || 'ILS', aliases: form.aliases.split(',').map((alias) => alias.trim()).filter(Boolean), active: form.active };
     if (!data.name || Number.isNaN(data.price) || data.price < 0) { setFeedback('מלאו שם ומחיר תקינים לפני שמירה.'); return; }
     const onSuccess = () => { client.invalidateQueries({ queryKey: getListProductsQueryKey() }); client.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); setModal(false); setFeedback('המוצר נשמר בהצלחה.'); };
     if (editing) update.mutate({ id: editing.id, data }, { onSuccess, onError: (error) => setFeedback(getErrorMessage(error)) }); else create.mutate({ data }, { onSuccess, onError: (error) => setFeedback(getErrorMessage(error)) });

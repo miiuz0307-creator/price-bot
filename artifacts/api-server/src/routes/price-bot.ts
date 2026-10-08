@@ -136,6 +136,52 @@ function validCode(code: string) {
   return /^\d{4,8}$/.test(code);
 }
 
+// Personal codes are only 4-8 digits, so unlimited guessing would find one in
+// minutes. Count failures per client address and per account, in memory.
+const loginWindowMs = 15 * 60_000;
+const maxFailuresPerAddress = 5;
+const maxFailuresPerAccount = 10;
+const loginFailures = new Map<string, { count: number; resetAt: number }>();
+
+function loginKeys(req: import("express").Request, adminId?: number) {
+  return [
+    { key: `ip:${req.ip ?? "unknown"}`, limit: maxFailuresPerAddress },
+    ...(adminId === undefined ? [] : [{ key: `admin:${adminId}`, limit: maxFailuresPerAccount }]),
+  ];
+}
+
+function loginRetryAfterSeconds(keys: { key: string; limit: number }[]) {
+  const now = Date.now();
+  let retryAfter = 0;
+  for (const { key, limit } of keys) {
+    const entry = loginFailures.get(key);
+    if (!entry) continue;
+    if (entry.resetAt <= now) { loginFailures.delete(key); continue; }
+    if (entry.count >= limit) retryAfter = Math.max(retryAfter, Math.ceil((entry.resetAt - now) / 1000));
+  }
+  return retryAfter;
+}
+
+function recordLoginFailure(keys: { key: string }[]) {
+  const now = Date.now();
+  if (loginFailures.size > 10_000) {
+    for (const [key, entry] of loginFailures) if (entry.resetAt <= now) loginFailures.delete(key);
+  }
+  for (const { key } of keys) {
+    const entry = loginFailures.get(key);
+    if (entry && entry.resetAt > now) entry.count += 1;
+    else loginFailures.set(key, { count: 1, resetAt: now + loginWindowMs });
+  }
+}
+
+function rejectIfLoginBlocked(res: import("express").Response, keys: { key: string; limit: number }[]) {
+  const retryAfter = loginRetryAfterSeconds(keys);
+  if (!retryAfter) return false;
+  res.setHeader("Retry-After", String(retryAfter));
+  res.status(429).json({ error: `יותר מדי ניסיונות כניסה שגויים. נסו שוב בעוד ${Math.ceil(retryAfter / 60)} דקות.` });
+  return true;
+}
+
 function sendSession(res: import("express").Response, admin: AuthAdmin) {
   res.cookie(sessionCookieName, encodeSession(admin.id), {
     httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production",
@@ -479,6 +525,14 @@ function formatExtrasResponse(header: string, credit: string) {
   ].join("\n");
 }
 
+// The web forms used to send "₪" while the bot and surge matching expect "ILS".
+// Store one canonical code so every product takes part in surge pricing.
+function normalizeCurrency(value: string | undefined | null) {
+  const trimmed = (value ?? "").trim();
+  if (!trimmed || trimmed === "₪" || /^(ils|nis)$/iu.test(trimmed) || /^ש["״'׳]?ח$/u.test(trimmed) || trimmed === "שקל") return "ILS";
+  return trimmed.toUpperCase();
+}
+
 function productDto(row: typeof priceBotProducts.$inferSelect) {
   return {
     id: row.id,
@@ -610,11 +664,16 @@ router.post("/auth/login", async (req, res, next) => {
       res.status(400).json({ error: "הקוד חייב להכיל 4 עד 8 ספרות" });
       return;
     }
+    const keys = loginKeys(req, data.adminId);
+    if (rejectIfLoginBlocked(res, keys)) return;
     const [admin] = await db.select().from(priceBotAdmins).where(and(eq(priceBotAdmins.id, data.adminId), eq(priceBotAdmins.active, true)));
     if (!admin || !admin.codeHash || !(await verifyCode(data.code, admin.codeHash))) {
+      recordLoginFailure(keys);
+      logger.warn({ adminId: data.adminId, ip: req.ip }, "Failed administrator login");
       res.status(401).json({ error: "קוד אישי שגוי או גישה לא פעילה" });
       return;
     }
+    for (const { key } of keys) loginFailures.delete(key);
     sendSession(res, admin);
     res.json(LoginAdminResponse.parse({ admin: adminDto(admin) }));
   } catch (error) {
@@ -631,7 +690,9 @@ router.post("/auth/logout", requireAdmin, (_req, res) => {
   res.status(204).end();
 });
 
-router.use((req, res, next) => req.path === "/webhooks/whatsapp" ? next() : requireAdmin(req, res, next));
+// Everything below requires a signed-in administrator, including the dashboard's
+// message-test endpoint (it used to be public and ran as the owner).
+router.use(requireAdmin);
 
 router.get("/products", async (_req, res, next) => {
   try {
@@ -650,7 +711,7 @@ router.post("/products", async (req, res, next) => {
       .values({
         name: data.name,
         price: String(data.price),
-        currency: data.currency ?? "ILS",
+        currency: normalizeCurrency(data.currency),
         aliases: data.aliases ?? [data.name],
         distance: data.distance ?? "",
         duration: data.duration ?? "",
@@ -680,7 +741,7 @@ router.patch("/products/:id", async (req, res, next) => {
       .set({
         name: data.name ?? current.name,
         price: data.price === undefined ? current.price : String(data.price),
-        currency: data.currency ?? current.currency,
+        currency: normalizeCurrency(data.currency ?? current.currency),
         aliases: data.aliases ?? current.aliases,
         distance: data.distance ?? current.distance,
         duration: data.duration ?? current.duration,
@@ -1313,6 +1374,9 @@ whatsappWeb.registerMessageHandler(async (message) => {
 });
 
 void (async () => {
+  // One-time, idempotent repair of products saved with "₪" by the old web forms.
+  await db.update(priceBotProducts).set({ currency: "ILS" })
+    .where(sql`trim(${priceBotProducts.currency}) in ('₪', 'ils', 'nis', 'NIS', 'ש"ח', 'ש״ח', 'שח', 'שקל')`);
   const owner = await getOrCreateOwnerAdmin();
   const admins = await db.select().from(priceBotAdmins).where(eq(priceBotAdmins.active, true));
   await Promise.all(admins.map((admin) => whatsappWeb.getStatus(admin.id, admin.id === owner.id)));
@@ -1321,10 +1385,8 @@ void (async () => {
 router.post("/webhooks/whatsapp", async (req, res, next) => {
   try {
     const { from, body } = ReceiveWhatsAppMessageBody.parse(req.body);
-    // The synthetic local-test webhook is deliberately pinned to the legacy owner;
-    // it can never select another administrator without an authenticated cookie.
-    const owner = await getOrCreateOwnerAdmin();
-    const result = await processPriceBotMessage({ adminId: owner.id, from, chatId: from, body, notifyAdmins: false });
+    // Dashboard test message: runs against the signed-in administrator's own targets.
+    const result = await processPriceBotMessage({ adminId: req.authAdmin!.id, from, chatId: from, body, notifyAdmins: false });
     res.json(ReceiveWhatsAppMessageResponse.parse(result));
   } catch (error) {
     next(error);

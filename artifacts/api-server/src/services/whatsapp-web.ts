@@ -172,8 +172,29 @@ class WhatsAppWebManager {
     if (update.connection === "open") { connection.phoneNumber = plainIdentifier(jidNormalizedUser(client.user?.id ?? "")); connection.qrCode = null; connection.pairingCode = null; connection.lastError = null; connection.reconnectAttempts = 0; connection.state = "connected"; return; }
     if (update.connection !== "close") return;
     const statusCode = (update.lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)?.output?.statusCode;
+    const wasLinked = Boolean(client.authState?.creds?.me);
     connection.client = null; connection.qrCode = null; connection.pairingCode = null; connection.phoneNumber = null;
-    if (connection.intentionalDisconnect || statusCode === DisconnectReason.loggedOut) { connection.state = "disconnected"; connection.lastError = statusCode === DisconnectReason.loggedOut ? "החיבור נותק מ-WhatsApp. התחברו מחדש." : null; return; }
+    if (connection.intentionalDisconnect) { connection.state = "disconnected"; connection.lastError = null; return; }
+    if (statusCode === DisconnectReason.loggedOut) {
+      // The device was removed from the phone. The saved keys are now useless and
+      // would make every restart fail, so delete them and wait for a new QR scan.
+      connection.state = "disconnected"; connection.lastError = "החיבור נותק מ-WhatsApp. התחברו מחדש.";
+      await rm(authPathFor(adminId), { recursive: true, force: true }).catch((error) => logger.warn({ err: error, adminId }, "Unable to remove logged-out WhatsApp auth"));
+      return;
+    }
+    if (statusCode === DisconnectReason.connectionReplaced) {
+      // Another server (e.g. dev and production) opened the same session.
+      // Reconnecting would make the two fight forever, so stop here.
+      connection.state = "error"; connection.lastError = "החיבור נפתח במקום אחר (שרת או סביבה נוספת). סגרו את החיבור השני ולחצו על חיבור מחדש.";
+      logger.warn({ adminId }, "WhatsApp session replaced by another connection; not reconnecting");
+      return;
+    }
+    if (!wasLinked && (statusCode === DisconnectReason.timedOut || statusCode === DisconnectReason.forbidden)) {
+      // Nobody scanned the QR code in time. Stop generating new codes in the background.
+      connection.state = "disconnected"; connection.lastError = "תוקף קוד החיבור פג. לחצו שוב על „חיבור WhatsApp” כדי לקבל קוד חדש.";
+      await rm(authPathFor(adminId), { recursive: true, force: true }).catch(() => undefined);
+      return;
+    }
     connection.state = "initializing";
     if (connection.reconnectTimer) clearTimeout(connection.reconnectTimer);
     const reconnectDelay = Math.min(5 * 60_000, 2_000 * 2 ** Math.min(connection.reconnectAttempts, 8));
@@ -191,6 +212,16 @@ class WhatsAppWebManager {
     if (client) await client.logout().catch(() => client.end(undefined).catch(() => undefined));
     await rm(authPathFor(adminId), { recursive: true, force: true });
     return this.status(connection);
+  }
+  /** Close every socket for a server restart. Does NOT log out: sessions resume on the next start. */
+  async shutdown() {
+    await Promise.all([...this.connections.entries()].map(async ([adminId, connection]) => {
+      connection.intentionalDisconnect = true;
+      if (connection.reconnectTimer) { clearTimeout(connection.reconnectTimer); connection.reconnectTimer = null; }
+      const client = connection.client;
+      if (!client) return;
+      await client.end(undefined).catch((error: unknown) => logger.warn({ err: error, adminId }, "Unable to close WhatsApp socket"));
+    }));
   }
   async sendMessageToPhone(adminId: number, phone: string, text: string) {
     const connection = this.connection(adminId);
