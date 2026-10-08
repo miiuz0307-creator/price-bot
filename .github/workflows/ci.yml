@@ -1,0 +1,52 @@
+name: CI
+
+# Runs on every push and pull request: install, typecheck, tests, production build,
+# and a Docker image build. A red ✗ on GitHub means "do not deploy this version".
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck (all packages)
+        run: pnpm run typecheck
+      - name: Tests
+        run: pnpm --filter @workspace/api-server run test
+      - name: Build API server
+        run: pnpm --filter @workspace/api-server run build
+      - name: Build web app
+        run: pnpm --filter @workspace/price-bot run build
+        env:
+          NODE_ENV: production
+          BASE_PATH: /
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: price-bot:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

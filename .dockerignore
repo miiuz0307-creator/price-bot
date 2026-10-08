@@ -1,0 +1,11 @@
+**/node_modules
+**/dist
+**/.expo
+**/.tsbuildinfo
+.git
+.local
+.cache
+.env
+.env.*
+!.env.example
+artifacts/api-server/.wwebjs_cache

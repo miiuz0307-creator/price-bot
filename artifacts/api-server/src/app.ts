@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import express, { type ErrorRequestHandler, type Express } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -37,6 +39,19 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);
+
+// Outside Replit the same server also serves the built web app, so one Railway
+// service (one URL, one cookie domain) runs everything.
+const webDir = path.resolve(process.env.WEB_DIST_DIR || path.resolve(process.cwd(), "artifacts/price-bot/dist/public"));
+if (existsSync(path.join(webDir, "index.html"))) {
+  app.use("/assets", express.static(path.join(webDir, "assets"), { immutable: true, maxAge: "1y", fallthrough: false }));
+  app.use(express.static(webDir, { index: false, maxAge: "1h" }));
+  app.get(/^\/(?!api(?:\/|$)).*/, (_req, res) => {
+    res.setHeader("Cache-Control", "no-cache");
+    res.sendFile(path.join(webDir, "index.html"));
+  });
+  logger.info({ webDir }, "Serving web app");
+}
 
 // Validation problems are the caller's fault (400); anything else is logged with
 // full detail on the server and answered with a generic message.

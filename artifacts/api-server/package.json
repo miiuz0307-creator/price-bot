@@ -8,6 +8,8 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "pnpm run test:route-estimate && pnpm run test:surge-pricing && pnpm run test:whatsapp-latency",
+    "test:surge-pricing": "esbuild src/services/surge-pricing.test.mjs --bundle --platform=node --format=esm --outfile=dist/surge-pricing.test.mjs && node --test dist/surge-pricing.test.mjs",
     "test:route-estimate": "esbuild src/services/route-estimate.test.mjs --bundle --platform=node --format=esm --outfile=dist/route-estimate.test.mjs && node --test dist/route-estimate.test.mjs",
     "test:baileys-recv-patch": "node --experimental-vm-modules --test src/services/baileys-recv-patch.test.mjs",
     "test:whatsapp-latency": "pnpm run test:baileys-recv-patch && esbuild src/services/whatsapp-ingress-timing.test.mjs src/services/whatsapp-key-cache.test.mjs --bundle --platform=node --format=esm --packages=external --outdir=dist/whatsapp-latency-tests --out-extension:.js=.mjs && node --test dist/whatsapp-latency-tests/*.mjs"

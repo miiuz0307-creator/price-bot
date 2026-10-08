@@ -28,7 +28,9 @@ const legacyAuthPaths = [
   path.resolve(process.cwd(), ".local/price-bot-whatsapp-auth"),
   path.resolve(process.cwd(), "artifacts/api-server/.local/price-bot-whatsapp-auth"),
 ];
-const authRoot = path.resolve(process.cwd(), ".local/price-bot-whatsapp-admins");
+// On Railway/Docker point WHATSAPP_AUTH_DIR at a persistent volume (e.g. /data/whatsapp)
+// so linked sessions survive redeploys. Default keeps the original Replit location.
+const authRoot = path.resolve(process.env.WHATSAPP_AUTH_DIR || path.resolve(process.cwd(), ".local/price-bot-whatsapp-admins"));
 const authPathFor = (adminId: number) => path.join(authRoot, `admin-${adminId}`);
 const blankConnection = (): Connection => ({
   client: null, initializePromise: null, state: "disconnected", qrCode: null, pairingCode: null,
