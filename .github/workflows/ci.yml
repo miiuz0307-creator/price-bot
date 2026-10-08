@@ -17,6 +17,13 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash -o pipefail {0}
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -44,24 +51,38 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile 2>&1 | tee -a "$RUNNER_TEMP/ci.log"
       - name: Typecheck (all packages)
-        run: pnpm run typecheck
+        run: pnpm run typecheck 2>&1 | tee -a "$RUNNER_TEMP/ci.log"
       - name: Unit tests
-        run: pnpm --filter @workspace/api-server run test
+        run: pnpm --filter @workspace/api-server run test 2>&1 | tee -a "$RUNNER_TEMP/ci.log"
       - name: Create test database schema
-        run: pnpm --filter @workspace/db run push-force
+        run: pnpm --filter @workspace/db run push-force 2>&1 | tee -a "$RUNNER_TEMP/ci.log"
       - name: Bot reply tests (golden)
-        run: pnpm --filter @workspace/api-server run test:integration
+        run: pnpm --filter @workspace/api-server run test:integration 2>&1 | tee -a "$RUNNER_TEMP/ci.log"
         env:
           UPDATE_GOLDEN: ${{ inputs.update_golden && '1' || '' }}
+      - name: Save newly recorded golden replies
+        if: github.event_name != 'pull_request'
+        run: |
+          if [ -n "$(git status --porcelain artifacts/api-server/src/tests/golden)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add artifacts/api-server/src/tests/golden
+            git commit -m "test: record golden bot replies"
+            git push
+            echo "::notice title=Golden replies recorded::Committed artifacts/api-server/src/tests/golden"
+          fi
       - name: Build API server
-        run: pnpm --filter @workspace/api-server run build
+        run: pnpm --filter @workspace/api-server run build 2>&1 | tee -a "$RUNNER_TEMP/ci.log"
       - name: Build web app
-        run: pnpm --filter @workspace/price-bot run build
+        run: pnpm --filter @workspace/price-bot run build 2>&1 | tee -a "$RUNNER_TEMP/ci.log"
         env:
           NODE_ENV: production
           BASE_PATH: /
+      - name: Report failure
+        if: failure()
+        run: .github/scripts/report-failure.sh
 
   docker:
     runs-on: ubuntu-latest

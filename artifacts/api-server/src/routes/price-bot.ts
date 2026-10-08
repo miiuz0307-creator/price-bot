@@ -83,6 +83,13 @@ const sessionLifetimeMs = 8 * 60 * 60 * 1000;
 const primaryOwnerPhone = "0504107826";
 const primaryOwnerLabel = "מיכאל";
 
+// Setting the very first owner code from the website means "whoever opens the site
+// first becomes the owner". In production that is only allowed when explicitly
+// enabled; the safe way is OWNER_INITIAL_CODE, applied once at startup.
+function ownerBootstrapAllowed() {
+  return process.env.NODE_ENV !== "production" || process.env.ALLOW_OWNER_BOOTSTRAP === "1";
+}
+
 type AuthAdmin = typeof priceBotAdmins.$inferSelect;
 declare global {
   namespace Express {
@@ -627,7 +634,7 @@ router.get("/auth/admins", async (_req, res, next) => {
 router.get("/auth/status", async (_req, res, next) => {
   try {
     const owner = await getOrCreateOwnerAdmin();
-    res.json(GetAuthStatusResponse.parse({ ownerSetupRequired: Boolean(owner && !owner.codeHash) }));
+    res.json(GetAuthStatusResponse.parse({ ownerSetupRequired: Boolean(owner && !owner.codeHash && ownerBootstrapAllowed()) }));
   } catch (error) {
     next(error);
   }
@@ -641,7 +648,7 @@ router.post("/auth/bootstrap", async (req, res, next) => {
       return;
     }
     const owner = await getOrCreateOwnerAdmin();
-    if (!owner || owner.codeHash) {
+    if (!owner || owner.codeHash || !ownerBootstrapAllowed()) {
       res.status(403).json({ error: "הגדרת קוד הבעלים אינה זמינה" });
       return;
     }
@@ -1378,6 +1385,16 @@ void (async () => {
   await db.update(priceBotProducts).set({ currency: "ILS" })
     .where(sql`trim(${priceBotProducts.currency}) in ('₪', 'ils', 'nis', 'NIS', 'ש"ח', 'ש״ח', 'שח', 'שקל')`);
   const owner = await getOrCreateOwnerAdmin();
+  const initialCode = process.env.OWNER_INITIAL_CODE?.trim();
+  if (!owner.codeHash && initialCode) {
+    if (validCode(initialCode)) {
+      await db.update(priceBotAdmins).set({ codeHash: await hashCode(initialCode) })
+        .where(and(eq(priceBotAdmins.id, owner.id), sql`${priceBotAdmins.codeHash} is null`));
+      logger.info("Owner code set from OWNER_INITIAL_CODE; remove the variable now");
+    } else {
+      logger.warn("OWNER_INITIAL_CODE must be 4-8 digits; ignored");
+    }
+  }
   const admins = await db.select().from(priceBotAdmins).where(eq(priceBotAdmins.active, true));
   await Promise.all(admins.map((admin) => whatsappWeb.getStatus(admin.id, admin.id === owner.id)));
 })().catch((error) => logger.error({ err: error }, "Unable to initialize administrator WhatsApp sessions"));
