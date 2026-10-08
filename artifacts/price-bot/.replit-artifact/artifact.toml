@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Price Bot"
+description = "A Hebrew RTL admin dashboard for managing WhatsApp price lookups, products, prices, and authorized administrators."
+version = "1.0.0"
+id = "artifacts/price-bot"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25822
+
+[services.development]
+run = "pnpm --filter @workspace/price-bot run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/price-bot", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/price-bot/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25822"
+BASE_PATH = "/"

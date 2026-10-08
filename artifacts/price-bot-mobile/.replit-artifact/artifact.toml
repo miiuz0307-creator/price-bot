@@ -1,0 +1,29 @@
+kind = "mobile"
+previewPath = "/mobile/"
+title = "Price Bot Mobile"
+description = "A Hebrew RTL mobile companion for managing the WhatsApp price bot, product prices, administrators, and active contacts or groups on Android and iPhone."
+version = "1.0.0"
+id = "artifacts/price-bot-mobile"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/mobile/" ]
+localPort = 20779
+
+[services.development]
+run = "pnpm --filter @workspace/price-bot-mobile run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/price-bot-mobile", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/price-bot-mobile/static-build"
+
+[[services.production.rewrites]]
+from = "/mobile/"
+to = "/index.html"
+
+[services.env]
+PORT = "20779"
+BASE_PATH = "/mobile/"

@@ -1,0 +1,784 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: products
+    description: Price catalog operations
+  - name: abbreviations
+    description: Custom location shortcuts for price lookup
+  - name: surge
+    description: Temporary group-sourced peak-time prices
+  - name: admins
+    description: Authorized administrator operations
+  - name: auth
+    description: Web administrator authentication
+  - name: dashboard
+    description: Dashboard summary operations
+  - name: integration
+    description: WhatsApp connection status
+  - name: targets
+    description: WhatsApp contacts and groups where the bot is active
+  - name: lookup-requests
+    description: Price requests that need a new catalog entry
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /products:
+    get:
+      operationId: listProducts
+      tags: [products]
+      summary: List products and prices
+      responses:
+        "200":
+          description: Product list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Product"
+    post:
+      operationId: createProduct
+      tags: [products]
+      summary: Create a product price
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductInput"
+      responses:
+        "201":
+          description: Created product
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+  /products/{id}:
+    patch:
+      operationId: updateProduct
+      tags: [products]
+      summary: Update a product price
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductUpdate"
+      responses:
+        "200":
+          description: Updated product
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+    delete:
+      operationId: deleteProduct
+      tags: [products]
+      summary: Delete a product price
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Deleted
+  /abbreviations:
+    get:
+      operationId: listAbbreviations
+      tags: [abbreviations]
+      summary: List custom location shortcuts
+      responses:
+        "200":
+          description: Saved shortcuts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Abbreviation"
+    post:
+      operationId: createAbbreviation
+      tags: [abbreviations]
+      summary: Add a location shortcut
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AbbreviationInput"
+      responses:
+        "201":
+          description: Created shortcut
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Abbreviation"
+        "409":
+          description: Shortcut already exists or is built in
+  /abbreviations/{id}:
+    patch:
+      operationId: updateAbbreviation
+      tags: [abbreviations]
+      summary: Edit a location shortcut
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AbbreviationInput"
+      responses:
+        "200":
+          description: Updated shortcut
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Abbreviation"
+        "409":
+          description: Shortcut already exists or is built in
+    delete:
+      operationId: deleteAbbreviation
+      tags: [abbreviations]
+      summary: Remove a location shortcut
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Deleted
+  /surge:
+    get:
+      operationId: getSurgeStatus
+      tags: [surge]
+      summary: Get live peak-time monitoring state and temporary prices
+      responses:
+        "200":
+          description: Current monitor state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SurgeStatus"
+  /surge/start:
+    post:
+      operationId: startSurgeMonitoring
+      tags: [surge]
+      summary: Monitor new offers in selected WhatsApp groups
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SurgeStartInput"
+      responses:
+        "200":
+          description: Monitoring started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SurgeStatus"
+  /surge/stop:
+    post:
+      operationId: stopSurgeMonitoring
+      tags: [surge]
+      summary: Stop monitoring and deactivate temporary prices
+      responses:
+        "200":
+          description: Monitoring stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SurgeStatus"
+  /admins:
+    get:
+      operationId: listAdmins
+      tags: [admins]
+      summary: List authorized administrators
+      responses:
+        "200":
+          description: Admin list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Admin"
+    post:
+      operationId: createAdmin
+      tags: [admins]
+      summary: Add an administrator by phone number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminInput"
+      responses:
+        "201":
+          description: Created admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Admin"
+  /admins/{id}:
+    delete:
+      operationId: deleteAdmin
+      tags: [admins]
+      summary: Remove an administrator
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Deleted
+  /admins/{id}/code:
+    put:
+      operationId: setAdminCode
+      tags: [admins]
+      summary: Set or reset an administrator personal code
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminCodeInput"
+      responses:
+        "204":
+          description: Code updated
+  /auth/admins:
+    get:
+      operationId: listLoginAdmins
+      tags: [auth]
+      summary: List active administrators available for web login
+      responses:
+        "200":
+          description: Active administrators
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LoginAdmin"
+  /auth/status:
+    get:
+      operationId: getAuthStatus
+      tags: [auth]
+      summary: Get public authentication bootstrap status
+      responses:
+        "200":
+          description: Authentication status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthStatus"
+  /auth/login:
+    post:
+      operationId: loginAdmin
+      tags: [auth]
+      summary: Sign in an administrator with their personal code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminLoginInput"
+      responses:
+        "200":
+          description: Current authenticated administrator
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentSession"
+  /auth/bootstrap:
+    post:
+      operationId: bootstrapOwnerCode
+      tags: [auth]
+      summary: Set the owner code once when no owner code exists
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OwnerCodeBootstrapInput"
+      responses:
+        "200":
+          description: Current authenticated owner
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentSession"
+  /auth/session:
+    get:
+      operationId: getCurrentSession
+      tags: [auth]
+      summary: Get the current authenticated administrator
+      responses:
+        "200":
+          description: Current session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentSession"
+  /auth/logout:
+    post:
+      operationId: logoutAdmin
+      tags: [auth]
+      summary: End the current web session
+      responses:
+        "204":
+          description: Logged out
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get dashboard overview
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+  /integration/whatsapp:
+    get:
+      operationId: getWhatsAppStatus
+      tags: [integration]
+      summary: Get the current administrator's WhatsApp connection status
+      responses:
+        "200":
+          description: WhatsApp status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WhatsAppStatus"
+  /integration/whatsapp/connect:
+    post:
+      operationId: connectWhatsApp
+      tags: [integration]
+      summary: Begin or restart pairing for the current administrator's WhatsApp account
+      responses:
+        "200":
+          description: Current WhatsApp pairing status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WhatsAppStatus"
+  /integration/whatsapp/disconnect:
+    post:
+      operationId: disconnectWhatsApp
+      tags: [integration]
+      summary: Log out and disconnect the current administrator's WhatsApp account
+      responses:
+        "200":
+          description: Current WhatsApp pairing status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WhatsAppStatus"
+  /integration/whatsapp/groups:
+    get:
+      operationId: listWhatsAppGroups
+      tags: [integration]
+      summary: List groups available to the current administrator's connected WhatsApp account
+      responses:
+        "200":
+          description: WhatsApp groups that can be activated for the bot
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WhatsAppGroup"
+  /targets:
+    get:
+      operationId: listTargets
+      tags: [targets]
+      summary: List the current administrator's active contacts and groups
+      responses:
+        "200":
+          description: Target list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Target"
+    post:
+      operationId: createTarget
+      tags: [targets]
+      summary: Activate the bot for the current administrator's contact or group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TargetInput"
+      responses:
+        "201":
+          description: Created target
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Target"
+  /targets/{id}:
+    patch:
+      operationId: updateTarget
+      tags: [targets]
+      summary: Enable or disable a target
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TargetUpdate"
+      responses:
+        "200":
+          description: Updated target
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Target"
+    delete:
+      operationId: deleteTarget
+      tags: [targets]
+      summary: Remove a target
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Deleted
+  /lookup-requests:
+    get:
+      operationId: listLookupRequests
+      tags: [lookup-requests]
+      summary: List recent unmatched price requests
+      responses:
+        "200":
+          description: Recent requests that were not found in the catalog
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LookupRequest"
+  /lookup-requests/{id}:
+    delete:
+      operationId: deleteLookupRequest
+      tags: [lookup-requests]
+      summary: Dismiss an unmatched price request after handling it
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Dismissed
+  /lookup-requests/{id}/approve:
+    post:
+      operationId: approveLookupEstimate
+      tags: [lookup-requests]
+      summary: Approve the saved price estimate and add it to the catalog
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "201":
+          description: Approved product
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "409":
+          description: The route is already in the catalog
+  /webhooks/whatsapp:
+    post:
+      operationId: receiveWhatsAppMessage
+      tags: [integration]
+      summary: Receive an inbound WhatsApp message
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WhatsAppMessageInput"
+      responses:
+        "200":
+          description: Bot response decision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WhatsAppMessageResult"
+components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+  schemas:
+    SurgeOffer:
+      type: object
+      required: [id, productId, route, price, vehicleType, extraPassenger, groupIdentifier, groupLabel, observedAt, expiresAt]
+      properties:
+        id: { type: integer }
+        productId: { type: integer }
+        route: { type: string }
+        price: { type: integer }
+        vehicleType: { type: string, enum: [regular, small_minivan, roomy_six, sienna] }
+        extraPassenger: { type: boolean }
+        groupIdentifier: { type: string }
+        groupLabel: { type: string }
+        observedAt: { type: string }
+        expiresAt: { type: string }
+    SurgeStatus:
+      type: object
+      required: [active, connected, groupIdentifiers, offers]
+      properties:
+        active: { type: boolean }
+        connected: { type: boolean }
+        groupIdentifiers:
+          type: array
+          items: { type: string }
+        offers:
+          type: array
+          items:
+            $ref: "#/components/schemas/SurgeOffer"
+    SurgeStartInput:
+      type: object
+      required: [groupIdentifiers]
+      properties:
+        groupIdentifiers:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items: { type: string }
+    Abbreviation:
+      type: object
+      required: [id, shortcut, expansion, updatedAt]
+      properties:
+        id: { type: integer }
+        shortcut: { type: string }
+        expansion: { type: string }
+        updatedAt: { type: string }
+    AbbreviationInput:
+      type: object
+      required: [shortcut, expansion]
+      properties:
+        shortcut: { type: string, minLength: 2, maxLength: 20 }
+        expansion: { type: string, minLength: 2, maxLength: 80 }
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+    Product:
+      type: object
+      required: [id, name, price, currency, aliases, active, updatedAt, distance, duration, level, priceMatrix, waitTime]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        price: { type: number }
+        currency: { type: string }
+        distance: { type: string }
+        duration: { type: string }
+        level: { type: string }
+        priceMatrix:
+          type: array
+          items: { type: number }
+        waitTime: { type: string }
+        aliases:
+          type: array
+          items: { type: string }
+        active: { type: boolean }
+        updatedAt: { type: string }
+    ProductInput:
+      type: object
+      required: [name, price]
+      properties:
+        name: { type: string, minLength: 1 }
+        price: { type: number, minimum: 0 }
+        currency: { type: string, default: ILS }
+        distance: { type: string }
+        duration: { type: string }
+        level: { type: string }
+        priceMatrix:
+          type: array
+          items: { type: number }
+        waitTime: { type: string }
+        aliases:
+          type: array
+          items: { type: string }
+        active: { type: boolean, default: true }
+    ProductUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        price: { type: number, minimum: 0 }
+        currency: { type: string }
+        distance: { type: string }
+        duration: { type: string }
+        level: { type: string }
+        priceMatrix:
+          type: array
+          items: { type: number }
+        waitTime: { type: string }
+        aliases:
+          type: array
+          items: { type: string }
+        active: { type: boolean }
+    Admin:
+      type: object
+      required: [id, phone, label, role, active, addedAt]
+      properties:
+        id: { type: integer }
+        phone: { type: string }
+        label: { type: string }
+        role: { type: string, enum: [owner, admin] }
+        active: { type: boolean }
+        addedAt: { type: string }
+    AdminInput:
+      type: object
+      required: [phone]
+      properties:
+        phone: { type: string, minLength: 7 }
+        label: { type: string }
+    AdminCodeInput:
+      type: object
+      required: [code]
+      properties:
+        code: { type: string, pattern: '^\d{4,8}$' }
+    LoginAdmin:
+      type: object
+      required: [id, label, role]
+      properties:
+        id: { type: integer }
+        label: { type: string }
+        role: { type: string, enum: [owner, admin] }
+    AdminLoginInput:
+      type: object
+      required: [adminId, code]
+      properties:
+        adminId: { type: integer }
+        code: { type: string, pattern: '^\d{4,8}$' }
+    OwnerCodeBootstrapInput:
+      type: object
+      required: [code]
+      properties:
+        code: { type: string, pattern: '^\d{4,8}$' }
+    AuthStatus:
+      type: object
+      required: [ownerSetupRequired]
+      properties:
+        ownerSetupRequired: { type: boolean }
+    CurrentSession:
+      type: object
+      required: [admin]
+      properties:
+        admin:
+          $ref: "#/components/schemas/Admin"
+    DashboardSummary:
+      type: object
+      required: [productCount, activeProductCount, adminCount, lookupCount, lastLookupAt]
+      properties:
+        productCount: { type: integer }
+        activeProductCount: { type: integer }
+        adminCount: { type: integer }
+        lookupCount: { type: integer }
+        lastLookupAt: { type: ["string", "null"] }
+    WhatsAppStatus:
+      type: object
+      required: [connected, provider, phoneNumber, webhookConfigured, connectionState, qrCode, pairingCode, lastError]
+      properties:
+        connected: { type: boolean }
+        provider: { type: string }
+        phoneNumber: { type: ["string", "null"] }
+        webhookConfigured: { type: boolean }
+        connectionState: { type: string, enum: [disconnected, initializing, qr_ready, pairing_code_ready, connected, error] }
+        qrCode: { type: ["string", "null"] }
+        pairingCode: { type: ["string", "null"] }
+        lastError: { type: ["string", "null"] }
+    WhatsAppMessageInput:
+      type: object
+      required: [from, body]
+      properties:
+        from: { type: string }
+        body: { type: string }
+    WhatsAppMessageResult:
+      type: object
+      required: [matched, responseText]
+      properties:
+        matched: { type: boolean }
+        responseText: { type: string }
+    WhatsAppGroup:
+      type: object
+      required: [identifier, label]
+      properties:
+        identifier: { type: string }
+        label: { type: string }
+    Target:
+      type: object
+      required: [id, kind, identifier, label, active, addedAt]
+      properties:
+        id: { type: integer }
+        kind: { type: string, enum: [contact, group] }
+        identifier: { type: string }
+        label: { type: string }
+        active: { type: boolean }
+        addedAt: { type: string }
+    TargetInput:
+      type: object
+      required: [kind, identifier, label]
+      properties:
+        kind: { type: string, enum: [contact, group] }
+        identifier: { type: string, minLength: 3 }
+        label: { type: string, minLength: 1 }
+    TargetUpdate:
+      type: object
+      properties:
+        label: { type: string, minLength: 1 }
+        active: { type: boolean }
+    LookupRequest:
+      type: object
+      required: [id, query, from, createdAt, estimate]
+      properties:
+        id: { type: integer }
+        query: { type: string }
+        from: { type: string }
+        createdAt: { type: string }
+        estimate:
+          anyOf:
+            - $ref: "#/components/schemas/RouteEstimate"
+            - type: "null"
+    RouteEstimate:
+      type: object
+      required: [name, distanceKm, priceMatrix]
+      properties:
+        name: { type: string }
+        distanceKm: { type: number }
+        waitTime: { type: string }
+        priceMatrix:
+          type: array
+          items: { type: number }
+

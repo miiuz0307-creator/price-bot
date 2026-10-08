@@ -1,0 +1,38 @@
+{
+  "name": "@workspace/api-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
+    "build": "node ./build.mjs",
+    "start": "node --enable-source-maps ./dist/index.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:route-estimate": "esbuild src/services/route-estimate.test.mjs --bundle --platform=node --format=esm --outfile=dist/route-estimate.test.mjs && node --test dist/route-estimate.test.mjs",
+    "test:baileys-recv-patch": "node --experimental-vm-modules --test src/services/baileys-recv-patch.test.mjs",
+    "test:whatsapp-latency": "pnpm run test:baileys-recv-patch && esbuild src/services/whatsapp-ingress-timing.test.mjs src/services/whatsapp-key-cache.test.mjs --bundle --platform=node --format=esm --packages=external --outdir=dist/whatsapp-latency-tests --out-extension:.js=.mjs && node --test dist/whatsapp-latency-tests/*.mjs"
+  },
+  "dependencies": {
+    "@workspace/api-zod": "workspace:*",
+    "@workspace/db": "workspace:*",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "drizzle-orm": "catalog:",
+    "express": "^5.2.1",
+    "@whiskeysockets/baileys": "7.0.0-rc14",
+    "qrcode": "^1.5.4",
+    "pino": "^9.14.0",
+    "pino-http": "^10.5.0",
+    "protobufjs": "^7.6.6"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "catalog:",
+    "esbuild": "0.27.3",
+    "esbuild-plugin-pino": "^2.3.3",
+    "pino-pretty": "^13.1.3",
+    "thread-stream": "3.1.0"
+  }
+}

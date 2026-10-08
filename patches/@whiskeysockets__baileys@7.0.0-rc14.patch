@@ -1,0 +1,160 @@
+diff --git a/lib/Socket/messages-recv.js b/lib/Socket/messages-recv.js
+index f2003ac00ef223468c432a1bbe0a0eb02c1453b2..d0f830b59daccf4c4865bbed905920512cd5031d 100644
+--- a/lib/Socket/messages-recv.js
++++ b/lib/Socket/messages-recv.js
+@@ -6,7 +6,6 @@ import { proto } from '../../WAProto/index.js';
+ import { DEFAULT_CACHE_TTLS, KEY_BUNDLE_TYPE, MIN_PREKEY_COUNT, PLACEHOLDER_MAX_AGE_SECONDS, STATUS_EXPIRY_SECONDS } from '../Defaults/index.js';
+ import { ReachoutTimelockEnforcementType, WAMessageStatus, WAMessageStubType } from '../Types/index.js';
+ import { ACCOUNT_RESTRICTED_TEXT, aesDecryptCTR, aesEncryptGCM, cleanMessage, Curve, decodeMediaRetryNode, decodeMessageNode, decryptMessageNode, delay, derivePairingCodeKey, encodeBigEndian, encodeSignedDeviceIdentity, extractAddressingContext, extractE2ESessionFromRetryReceipt, getCallStatusFromNode, getHistoryMsg, getNextPreKeys, getStatusFromReceiptType, handleIdentityChange, hkdf, MISSING_KEYS_ERROR_TEXT, NACK_REASONS, NO_MESSAGE_FOUND_ERROR_TEXT, SERVER_ERROR_CODES, toNumber, unixTimestampSeconds, xmppPreKey, xmppSignedPreKey } from '../Utils/index.js';
+-import { makeMutex } from '../Utils/make-mutex.js';
+ import { makeOfflineNodeProcessor } from '../Utils/offline-node-processor.js';
+ import { buildAckStanza } from '../Utils/stanza-ack.js';
+ import { buildMergedTcTokenIndexWrite, isTcTokenExpired, readTcTokenIndex, resolveIssuanceJid, resolveTcTokenJid, storeTcTokensFromIqResult, TC_TOKEN_INDEX_KEY } from '../Utils/tc-token-utils.js';
+@@ -22,8 +21,88 @@ export const makeMessagesRecvSocket = (config) => {
+     const sock = makeMessagesSocket(config);
+     const { userDevicesCache, devicesMutex, ev, authState, ws, messageMutex, notificationMutex, receiptMutex, signalRepository, query, upsertMessage, resyncAppState, onUnexpectedError, assertSessions, sendNode, relayMessage, sendReceipt, uploadPreKeys, sendPeerDataOperationMessage, messageRetryManager, registerSocketEndHandler, issuePrivacyTokens, fetchAccountReachoutTimelock, placeholderResendCache } = sock;
+     const getLIDForPN = signalRepository.lidMapping.getLIDForPN.bind(signalRepository.lidMapping);
+-    /** this mutex ensures that each retryRequest will wait for the previous one to finish */
+-    const retryMutex = makeMutex();
++    // Queue only protocol metadata; ciphertext and message content are not needed
++    // by decodeMessageNode, sendRetryRequest, or ACK construction.
++    const retryQueue = [];
++    let retryQueueRunning = false;
++    let activeRetry;
++    let lastSlowRetryQueueLogAt = 0;
++    const logSlowRetryQueue = () => {
++        if (!ws.isOpen) {
++            return;
++        }
++        const oldest = activeRetry || retryQueue[0];
++        if (!oldest) {
++            return;
++        }
++        const retryQueueDepth = retryQueue.length + (activeRetry ? 1 : 0);
++        const oldestRetryAgeMs = Date.now() - oldest.queuedAt;
++        const slowAgeThresholdMs = Math.max(1000, (retryRequestDelayMs || 0) * 2);
++        if (retryQueueDepth < 5 && oldestRetryAgeMs < slowAgeThresholdMs) {
++            return;
++        }
++        const now = Date.now();
++        if (now - lastSlowRetryQueueLogAt < 10_000) {
++            return;
++        }
++        lastSlowRetryQueueLogAt = now;
++        logger.warn({ retryQueueDepth, oldestRetryAgeMs }, 'retry request queue is backed up');
++    };
++    const startRetryQueue = () => {
++        void Promise.resolve()
++            .then(async () => {
++            if (retryQueueRunning) {
++                return;
++            }
++            retryQueueRunning = true;
++            try {
++                while (retryQueue.length) {
++                    const retry = retryQueue.shift();
++                    activeRetry = retry;
++                    logSlowRetryQueue();
++                    let retryStarted = false;
++                    try {
++                        await messageMutex.mutex(async () => {
++                            if (!ws.isOpen) {
++                                return;
++                            }
++                            retryStarted = true;
++                            try {
++                                await sendRetryRequest(retry.node, retry.forceIncludeKeys);
++                            }
++                            catch (err) {
++                                logger.error({ err }, 'Failed to send retry');
++                            }
++                            if (!ws.isOpen) {
++                                return;
++                            }
++                            try {
++                                await sendMessageAck(retry.node, NACK_REASONS.UnhandledError);
++                            }
++                            catch (ackErr) {
++                                logger.error({ ackErr }, 'failed to ack message after error');
++                            }
++                        });
++                    }
++                    catch (err) {
++                        logger.error({ err }, 'failed to process retry');
++                    }
++                    if (retryStarted && retryRequestDelayMs) {
++                        await delay(retryRequestDelayMs);
++                    }
++                    activeRetry = undefined;
++                }
++            }
++            finally {
++                activeRetry = undefined;
++                retryQueueRunning = false;
++                if (retryQueue.length) {
++                    startRetryQueue();
++                }
++            }
++        })
++            .catch(err => logger.error({ err }, 'failed to drain retry request queue'));
++    };
+     const msgRetryCache = config.msgRetryCounterCache ||
+         new NodeCache({
+             stdTTL: DEFAULT_CACHE_TTLS.MSG_RETRY, // 1 hour
+@@ -1272,6 +1351,7 @@ export const makeMessagesRecvSocket = (config) => {
+             return;
+         }
+         let acked = false;
++        let retryQueued = false;
+         try {
+             const { fullMessage: msg, category, author, decrypt } = decryptMessageNode(node, authState.creds.me.id, authState.creds.me.lid || '', signalRepository, logger);
+             const alt = msg.key.participantAlt || msg.key.remoteJidAlt;
+@@ -1368,25 +1448,16 @@ export const makeMessagesRecvSocket = (config) => {
+                             }
+                         }
+                         logger.debug('[handleMessage] Attempting retry request for failed decryption');
+-                        // WAWeb only retry-receipts here; server emits PreKeyLow if prekeys run low.
+-                        await retryMutex.mutex(async () => {
+-                            try {
+-                                if (!ws.isOpen) {
+-                                    logger.debug({ node }, 'Connection closed, skipping retry');
+-                                    return;
+-                                }
+-                                const encNode = getBinaryNodeChild(node, 'enc');
+-                                await sendRetryRequest(node, !encNode);
+-                                if (retryRequestDelayMs) {
+-                                    await delay(retryRequestDelayMs);
+-                                }
+-                            }
+-                            catch (err) {
+-                                logger.error({ err }, 'Failed to send retry');
+-                            }
+-                            acked = true;
+-                            await sendMessageAck(node, NACK_REASONS.UnhandledError);
++                        // Mark ACK ownership and enqueue in the decrypt/upsert
++                        // lock. Keep only stanza metadata, not ciphertext.
++                        acked = true;
++                        retryQueued = true;
++                        retryQueue.push({
++                            node: { tag: node.tag, attrs: { ...node.attrs } },
++                            forceIncludeKeys: !encNode,
++                            queuedAt: Date.now()
+                         });
++                        logSlowRetryQueue();
+                     }
+                 }
+                 else {
+@@ -1438,6 +1509,13 @@ export const makeMessagesRecvSocket = (config) => {
+                 await sendMessageAck(node, NACK_REASONS.UnhandledError).catch(ackErr => logger.error({ ackErr }, 'failed to ack message after error'));
+             }
+         }
++        finally {
++            // The retry worker re-acquires messageMutex only for session/send
++            // mutations and ACK; its throttling delay runs after releasing it.
++            if (retryQueued) {
++                startRetryQueue();
++            }
++        }
+     };
+     const handleCall = async (node) => {
+         try {
