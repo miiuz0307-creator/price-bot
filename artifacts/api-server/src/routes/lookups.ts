@@ -83,6 +83,8 @@ import { messageCredit, messageHeader, formatProductResponse, formatHourlyPricin
 import { normalizeCurrency, productDto, adminDto, targetDto, lookupRequestDto } from "./dto";
 import { primaryOwnerPhone, primaryOwnerLabel, ownerBootstrapAllowed, getOrCreateOwnerAdmin } from "../services/owner";
 
+import { audit } from "../services/audit";
+
 const router: IRouter = Router();
 
 router.get("/lookup-requests", async (req, res, next) => {
@@ -151,6 +153,7 @@ router.post("/lookup-requests/:id/approve", requirePermission("lookups.manage"),
         : outcome.status === 422 ? "ההערכה אינה תקינה ואי אפשר לאשר אותה." : "לא נמצאה הערכה ממתינה לאישור." });
       return;
     }
+    void audit(req, "lookup.approve", { type: "product", id: outcome.product.id }, { label: outcome.product.name, priceMatrix: outcome.product.priceMatrix });
     res.status(201).json(ApproveLookupEstimateResponse.parse(productDto(outcome.product)));
   } catch (error) {
     next(error);

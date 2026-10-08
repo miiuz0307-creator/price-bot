@@ -83,6 +83,8 @@ import { messageCredit, messageHeader, formatProductResponse, formatHourlyPricin
 import { normalizeCurrency, productDto, adminDto, targetDto, lookupRequestDto } from "./dto";
 import { primaryOwnerPhone, primaryOwnerLabel, ownerBootstrapAllowed, getOrCreateOwnerAdmin } from "../services/owner";
 
+import { audit } from "../services/audit";
+
 const router: IRouter = Router();
 
 router.get("/targets", async (req, res, next) => {
@@ -105,6 +107,7 @@ router.post("/targets", requirePermission("targets.manage"), async (req, res, ne
         set: { kind: data.kind, label: data.label, active: true },
       })
       .returning();
+    void audit(req, "target.create", { type: "target", id: row.id }, { label: row.label });
     res.status(201).json(CreateTargetResponse.parse(targetDto(row)));
   } catch (error) {
     next(error);
@@ -125,6 +128,7 @@ router.patch("/targets/:id", requirePermission("targets.manage"), async (req, re
       .set({ label: data.label ?? current.label, active: data.active ?? current.active })
       .where(and(eq(priceBotTargets.id, id), eq(priceBotTargets.adminId, workspaceId(req.authAdmin!))))
       .returning();
+    void audit(req, "target.update", { type: "target", id: row.id }, { label: row.label, active: row.active });
     res.json(UpdateTargetResponse.parse(targetDto(row)));
   } catch (error) {
     next(error);
@@ -134,7 +138,8 @@ router.patch("/targets/:id", requirePermission("targets.manage"), async (req, re
 router.delete("/targets/:id", requirePermission("targets.manage"), async (req, res, next) => {
   try {
     const { id } = DeleteTargetParams.parse(req.params);
-    await db.delete(priceBotTargets).where(and(eq(priceBotTargets.id, id), eq(priceBotTargets.adminId, workspaceId(req.authAdmin!))));
+    const [deleted] = await db.delete(priceBotTargets).where(and(eq(priceBotTargets.id, id), eq(priceBotTargets.adminId, workspaceId(req.authAdmin!)))).returning();
+    if (deleted) void audit(req, "target.delete", { type: "target", id }, { label: deleted.label });
     res.status(204).end();
   } catch (error) {
     next(error);

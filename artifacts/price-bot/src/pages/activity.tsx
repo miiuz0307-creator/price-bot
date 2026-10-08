@@ -25,6 +25,18 @@ const actionLabels: Record<string, string> = {
   'whatsapp.replaced': 'WhatsApp נפתח במקום אחר',
   'whatsapp.code_expired': 'פג תוקף קוד החיבור',
   'whatsapp.error': 'תקלה בחיבור WhatsApp',
+  'product.create': 'הוסיף/ה מסלול למחירון',
+  'product.update': 'עדכן/ה מסלול',
+  'product.delete': 'מחק/ה מסלול',
+  'abbreviation.create': 'הוסיף/ה קיצור',
+  'abbreviation.update': 'עדכן/ה קיצור',
+  'abbreviation.delete': 'מחק/ה קיצור',
+  'target.create': 'הוסיף/ה יעד',
+  'target.update': 'עדכן/ה יעד',
+  'target.delete': 'הסיר/ה יעד',
+  'lookup.approve': 'אישר/ה הערכת מחיר למחירון',
+  'surge.start': 'הפעיל/ה זמני עומס',
+  'surge.stop': 'עצר/ה זמני עומס',
 };
 
 const problem = (action: string) => /\.(error|failed|disconnected|logged_out|replaced|login_failed)$/u.test(action);
@@ -35,7 +47,7 @@ const stateLabels: Record<string, string> = {
 };
 
 const methodLabels: Record<string, string> = { pin: 'קוד אישי', whatsapp: 'קוד ב־WhatsApp', qr: 'סריקת QR', pairing_code: 'קוד צימוד' };
-const fieldLabels: Record<string, string> = { label: 'שם', phone: 'טלפון', email: 'אימייל', permissions: 'הרשאות', sharedWhatsapp: 'WhatsApp משותף', active: 'סטטוס' };
+const fieldLabels: Record<string, string> = { label: 'שם', phone: 'טלפון', email: 'אימייל', permissions: 'הרשאות', sharedWhatsapp: 'WhatsApp משותף', active: 'סטטוס', name: 'שם', price: 'מחיר', priceMatrix: 'מחירים', aliases: 'כינויים', distance: 'מרחק', duration: 'זמן', level: 'סוג מחירון', waitTime: 'המתנה', currency: 'מטבע' };
 
 /** Turns stored details into a short Hebrew line. */
 function describeDetails(details: Record<string, unknown>) {
@@ -47,6 +59,12 @@ function describeDetails(details: Record<string, unknown>) {
   if (typeof details.phoneNumber === 'string') parts.push(`+${details.phoneNumber}`);
   if (typeof details.detail === 'string') parts.push(details.detail);
   if (typeof details.link === 'string') parts.push(details.link);
+  if (typeof details.groups === 'number') parts.push(`${details.groups} קבוצות`);
+  if (Array.isArray(details.before) && Array.isArray(details.after)) {
+    const cells = ["4 מק׳", "4 צדדים", "6 קטן", "6 קטן צדדים", "6 מרווח", "6 מרווח צדדים", "7 מק׳", "7 צדדים"];
+    const changes = details.after.map((value, index) => value !== (details.before as unknown[])[index] ? `${cells[index] ?? index + 1} ₪${(details.before as unknown[])[index] ?? '—'}→₪${value}` : null).filter(Boolean);
+    if (changes.length) parts.push(changes.slice(0, 4).join(', ') + (changes.length > 4 ? '…' : ''));
+  }
   return parts.join(' · ');
 }
 

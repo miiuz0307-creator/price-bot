@@ -83,6 +83,8 @@ import { messageCredit, messageHeader, formatProductResponse, formatHourlyPricin
 import { normalizeCurrency, productDto, adminDto, targetDto, lookupRequestDto } from "./dto";
 import { primaryOwnerPhone, primaryOwnerLabel, ownerBootstrapAllowed, getOrCreateOwnerAdmin } from "../services/owner";
 
+import { audit } from "../services/audit";
+
 const router: IRouter = Router();
 
 router.get("/products", async (_req, res, next) => {
@@ -112,6 +114,7 @@ router.post("/products", requirePermission("catalog.edit"), async (req, res, nex
         active: data.active ?? true,
       })
       .returning();
+    void audit(req, "product.create", { type: "product", id: row.id }, { label: row.name, priceMatrix: row.priceMatrix });
     res.status(201).json(CreateProductResponse.parse(productDto(row)));
   } catch (error) {
     next(error);
@@ -144,6 +147,7 @@ router.patch("/products/:id", requirePermission("catalog.edit"), async (req, res
       })
       .where(eq(priceBotProducts.id, id))
       .returning();
+    void audit(req, "product.update", { type: "product", id: row.id }, { label: row.name, fields: Object.keys(data), ...(JSON.stringify(current.priceMatrix) !== JSON.stringify(row.priceMatrix) ? { before: current.priceMatrix, after: row.priceMatrix } : {}) });
     res.json(UpdateProductResponse.parse(productDto(row)));
   } catch (error) {
     next(error);
@@ -153,7 +157,8 @@ router.patch("/products/:id", requirePermission("catalog.edit"), async (req, res
 router.delete("/products/:id", requirePermission("catalog.edit"), async (req, res, next) => {
   try {
     const { id } = DeleteProductParams.parse(req.params);
-    await db.delete(priceBotProducts).where(eq(priceBotProducts.id, id));
+    const [deleted] = await db.delete(priceBotProducts).where(eq(priceBotProducts.id, id)).returning();
+    if (deleted) void audit(req, "product.delete", { type: "product", id }, { label: deleted.name, priceMatrix: deleted.priceMatrix });
     res.status(204).end();
   } catch (error) {
     next(error);
@@ -196,6 +201,7 @@ router.post("/abbreviations", requirePermission("catalog.edit"), async (req, res
     }
     const [row] = await db.insert(priceBotAbbreviations).values(data).onConflictDoNothing().returning();
     if (!row) { res.status(409).json({ error: "הקיצור כבר קיים." }); return; }
+    void audit(req, "abbreviation.create", { type: "abbreviation", id: row.id }, { label: `${row.shortcut} → ${row.expansion}` });
     res.status(201).json(CreateAbbreviationResponse.parse(abbreviationDto(row)));
   } catch (error) { next(error); }
 });
@@ -214,6 +220,7 @@ router.patch("/abbreviations/:id", requirePermission("catalog.edit"), async (req
       .set({ ...data, updatedAt: new Date() })
       .where(eq(priceBotAbbreviations.id, id)).returning();
     if (!row) { res.status(404).json({ error: "הקיצור לא נמצא." }); return; }
+    void audit(req, "abbreviation.update", { type: "abbreviation", id: row.id }, { label: `${row.shortcut} → ${row.expansion}` });
     res.json(UpdateAbbreviationResponse.parse(abbreviationDto(row)));
   } catch (error) {
     if (isAbbreviationConflict(error)) { res.status(409).json({ error: "הקיצור כבר קיים." }); return; }
@@ -226,6 +233,7 @@ router.delete("/abbreviations/:id", requirePermission("catalog.edit"), async (re
     const { id } = DeleteAbbreviationParams.parse(req.params);
     const [row] = await db.delete(priceBotAbbreviations).where(eq(priceBotAbbreviations.id, id)).returning();
     if (!row) { res.status(404).json({ error: "הקיצור לא נמצא." }); return; }
+    void audit(req, "abbreviation.delete", { type: "abbreviation", id }, { label: `${row.shortcut} → ${row.expansion}` });
     res.status(204).end();
   } catch (error) { next(error); }
 });

@@ -83,6 +83,8 @@ import { messageCredit, messageHeader, formatProductResponse, formatHourlyPricin
 import { normalizeCurrency, productDto, adminDto, targetDto, lookupRequestDto } from "./dto";
 import { primaryOwnerPhone, primaryOwnerLabel, ownerBootstrapAllowed, getOrCreateOwnerAdmin } from "../services/owner";
 
+import { audit } from "../services/audit";
+
 const router: IRouter = Router();
 
 export async function surgeStatus(adminId: number) {
@@ -137,6 +139,7 @@ router.post("/surge/start", requirePermission("surge.manage"), async (req, res, 
         .onConflictDoUpdate({ target: priceBotSurgeSettings.adminId, set: { active: true, groupIdentifiers: identifiers, startedAt: now } });
       await tx.update(priceBotSurgeOffers).set({ expiresAt: now }).where(eq(priceBotSurgeOffers.adminId, workspaceId(req.authAdmin!)));
     });
+    void audit(req, "surge.start", { type: "workspace", id: workspaceId(req.authAdmin!) }, { groups: identifiers.length });
     res.json(StartSurgeMonitoringResponse.parse(await surgeStatus(workspaceId(req.authAdmin!))));
   } catch (error) { next(error); }
 });
@@ -148,6 +151,7 @@ router.post("/surge/stop", requirePermission("surge.manage"), async (req, res, n
       await tx.update(priceBotSurgeSettings).set({ active: false }).where(eq(priceBotSurgeSettings.adminId, workspaceId(req.authAdmin!)));
       await tx.update(priceBotSurgeOffers).set({ expiresAt: now }).where(eq(priceBotSurgeOffers.adminId, workspaceId(req.authAdmin!)));
     });
+    void audit(req, "surge.stop", { type: "workspace", id: workspaceId(req.authAdmin!) });
     res.json(StopSurgeMonitoringResponse.parse(await surgeStatus(workspaceId(req.authAdmin!))));
   } catch (error) { next(error); }
 });
