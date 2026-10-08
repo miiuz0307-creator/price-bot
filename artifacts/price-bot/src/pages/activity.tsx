@@ -34,12 +34,25 @@ const stateLabels: Record<string, string> = {
   pairing_code_ready: 'ממתין לקוד צימוד', error: 'תקלה',
 };
 
+const methodLabels: Record<string, string> = { pin: 'קוד אישי', whatsapp: 'קוד ב־WhatsApp', qr: 'סריקת QR', pairing_code: 'קוד צימוד' };
+const fieldLabels: Record<string, string> = { label: 'שם', phone: 'טלפון', email: 'אימייל', permissions: 'הרשאות', sharedWhatsapp: 'WhatsApp משותף', active: 'סטטוס' };
+
+/** Turns stored details into a short Hebrew line. */
+function describeDetails(details: Record<string, unknown>) {
+  const parts: string[] = [];
+  if (typeof details.label === 'string') parts.push(details.label);
+  if (typeof details.method === 'string') parts.push(`באמצעות ${methodLabels[details.method] ?? details.method}`);
+  if (details.sharedWhatsapp === true) parts.push('WhatsApp משותף');
+  if (Array.isArray(details.fields)) parts.push(`עודכנו: ${details.fields.map((field) => fieldLabels[String(field)] ?? String(field)).join(', ')}`);
+  if (typeof details.phoneNumber === 'string') parts.push(`+${details.phoneNumber}`);
+  if (typeof details.detail === 'string') parts.push(details.detail);
+  if (typeof details.link === 'string') parts.push(details.link);
+  return parts.join(' · ');
+}
+
 function EntryRow({ entry }: { entry: AuditEntry }) {
   const bad = problem(entry.action);
-  const details = Object.entries(entry.details ?? {})
-    .filter(([key]) => !['permissions'].includes(key))
-    .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : String(value)}`)
-    .join(' · ');
+  const details = describeDetails(entry.details ?? {});
   return <div className="flex items-start gap-3 px-4 py-3 sm:px-5">
     <div className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg ${bad ? 'bg-[hsl(var(--destructive)/.1)] text-destructive' : 'bg-secondary text-primary'}`}>
       {bad ? <AlertTriangle className="size-4" /> : <Activity className="size-4" />}
