@@ -358,6 +358,18 @@ export const priceBotReady: Promise<void> = (async () => {
       logger.warn("OWNER_INITIAL_CODE must be 4-8 digits; ignored");
     }
   }
+  // Forgotten owner code: set OWNER_RESET_CODE in the hosting variables, restart,
+  // sign in, then remove the variable. Overwrites the owner's personal code.
+  const resetCode = process.env.OWNER_RESET_CODE?.trim();
+  if (resetCode) {
+    if (validCode(resetCode)) {
+      await db.update(priceBotAdmins).set({ codeHash: await hashCode(resetCode), active: true }).where(eq(priceBotAdmins.id, owner.id));
+      void audit(null, "auth.owner_code_reset", { type: "user", id: owner.id }, { via: "OWNER_RESET_CODE" }, null);
+      logger.warn("Owner code reset from OWNER_RESET_CODE; remove the variable now");
+    } else {
+      logger.warn("OWNER_RESET_CODE must be 4-8 digits; ignored");
+    }
+  }
   const admins = await db.select().from(priceBotAdmins).where(and(eq(priceBotAdmins.active, true), isNull(priceBotAdmins.whatsappOwnerId)));
   await Promise.all(admins.map((admin) => whatsappWeb.getStatus(admin.id, admin.id === owner.id)));
 })().catch((error) => logger.error({ err: error }, "Unable to initialize administrator WhatsApp sessions"));
