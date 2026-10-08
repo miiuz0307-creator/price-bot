@@ -1,7 +1,10 @@
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
 import {
+  Activity,
   AlertCircle,
+  Mail,
+  Smartphone,
   ArrowUpLeft,
   Check,
   CheckCircle2,
@@ -67,6 +70,10 @@ import {
   useLoginAdmin,
   useLogoutAdmin,
   useSetAdminCode,
+  usePairWhatsApp,
+  useRequestLoginCode,
+  useVerifyLoginCode,
+  useLoginWithPin,
   type Admin,
   type LookupRequest,
   type Product,
@@ -75,9 +82,13 @@ import {
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ErrorBoundary } from '@/components/error-boundary';
+import { Badge, Button, EmptyState, Field, Modal, PageHeader, QueryError, Skeleton, formatDate, formatTime, getErrorMessage } from '@/components/app-ui';
 import NotFound from '@/pages/not-found';
 import AbbreviationsPage from '@/pages/abbreviations';
 import SurgePage from '@/pages/surge';
+import UsersPage from '@/pages/users';
+import ActivityPage from '@/pages/activity';
+import { SessionProvider, useCan, useSessionAdmin } from '@/lib/session';
 import { Link, Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import './index.css';
 
@@ -89,178 +100,16 @@ const navItems = [
   { href: '/abbreviations', label: 'קיצורים', icon: Pencil },
   { href: '/surge', label: 'זמני עומס', icon: Flame },
   { href: '/targets', label: 'יעדים פעילים', icon: UsersRound },
-  { href: '/admins', label: 'מנהלי מערכת', icon: ShieldCheck },
+  { href: '/admins', label: 'משתמשים והרשאות', icon: ShieldCheck },
+  { href: '/activity', label: 'מערכת ופעילות', icon: Activity, permission: 'users.manage' as const },
   { href: '/settings', label: 'חיבור ו-webhook', icon: Settings2 },
 ];
-
-function formatDate(value: string | null | undefined) {
-  if (!value) return 'עדיין אין נתונים';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat('he-IL', { day: 'numeric', month: 'short', year: 'numeric' }).format(date);
-}
-
-function formatTime(value: string | null | undefined) {
-  if (!value) return 'לא בוצעה בדיקה';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat('he-IL', { hour: '2-digit', minute: '2-digit' }).format(date);
-}
-
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'משהו השתבש. נסו שוב בעוד רגע.';
-}
-
-function Button({
-  children,
-  variant = 'primary',
-  className = '',
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'ghost' | 'danger' }) {
-  const styles = {
-    primary: 'bg-primary text-primary-foreground hover:brightness-95 shadow-sm',
-    secondary: 'bg-secondary text-secondary-foreground hover:bg-[hsl(var(--accent)/.22)]',
-    ghost: 'bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground',
-    danger: 'bg-[hsl(var(--destructive)/.09)] text-destructive hover:bg-[hsl(var(--destructive)/.15)]',
-  };
-  return (
-    <button
-      {...props}
-      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${styles[variant]} ${className}`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function Badge({ children, tone = 'neutral' }: { children: ReactNode; tone?: 'green' | 'amber' | 'red' | 'neutral' }) {
-  const tones = {
-    green: 'bg-[hsl(var(--primary)/.11)] text-primary',
-    amber: 'bg-[hsl(var(--accent)/.22)] text-[hsl(30_65%_29%)]',
-    red: 'bg-[hsl(var(--destructive)/.1)] text-destructive',
-    neutral: 'bg-muted text-muted-foreground',
-  };
-  return <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold ${tones[tone]}`}>{children}</span>;
-}
-
-function Field({
-  label,
-  children,
-  hint,
-}: {
-  label: string;
-  children: ReactNode;
-  hint?: string;
-}) {
-  return (
-    <label className="grid gap-1.5 text-sm font-bold text-foreground">
-      <span>{label}</span>
-      {children}
-      {hint && <span className="text-xs font-normal text-muted-foreground">{hint}</span>}
-    </label>
-  );
-}
-
-function Skeleton({ className = '' }: { className?: string }) {
-  return <div className={`animate-pulse-soft rounded-lg bg-muted ${className}`} aria-hidden="true" />;
-}
-
-function QueryError({ message, onRetry }: { message?: string; onRetry: () => void }) {
-  return (
-    <div className="flex items-center justify-between gap-4 rounded-xl border border-[hsl(var(--destructive)/.2)] bg-[hsl(var(--destructive)/.06)] p-4 text-sm">
-      <div className="flex items-center gap-3">
-        <AlertCircle className="size-5 text-destructive" />
-        <span>{message || 'לא הצלחנו לטעון את הנתונים.'}</span>
-      </div>
-      <Button variant="ghost" onClick={onRetry} data-testid="button-retry">
-        <RefreshCcw className="size-4" /> נסו שוב
-      </Button>
-    </div>
-  );
-}
-
-function EmptyState({ icon: Icon, title, description, action }: { icon: typeof PackageOpen; title: string; description: string; action?: ReactNode }) {
-  return (
-    <div className="grid place-items-center rounded-2xl border border-dashed border-border bg-card px-6 py-16 text-center">
-      <div className="mb-4 grid size-14 place-items-center rounded-2xl bg-secondary text-primary">
-        <Icon className="size-7" />
-      </div>
-      <h3 className="text-lg font-extrabold">{title}</h3>
-      <p className="mt-1 max-w-sm text-sm leading-6 text-muted-foreground">{description}</p>
-      {action && <div className="mt-5">{action}</div>}
-    </div>
-  );
-}
-
-function PageHeader({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: ReactNode }) {
-  return (
-    <header className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-      <div>
-        <p className="mb-2 text-xs font-extrabold uppercase tracking-[.16em] text-primary">{eyebrow}</p>
-        <h1 className="text-3xl font-extrabold tracking-tight text-balance sm:text-4xl">{title}</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{description}</p>
-      </div>
-      {action}
-    </header>
-  );
-}
-
-function Modal({
-  title,
-  description,
-  onClose,
-  children,
-}: {
-  title: string;
-  description?: string;
-  onClose: () => void;
-  children: ReactNode;
-}) {
-  useEffect(() => {
-    const scrollY = window.scrollY;
-    const { body } = document;
-    const previous = {
-      position: body.style.position,
-      top: body.style.top,
-      width: body.style.width,
-      overflow: body.style.overflow,
-    };
-    body.style.position = 'fixed';
-    body.style.top = `-${scrollY}px`;
-    body.style.width = '100%';
-    body.style.overflow = 'hidden';
-
-    return () => {
-      body.style.position = previous.position;
-      body.style.top = previous.top;
-      body.style.width = previous.width;
-      body.style.overflow = previous.overflow;
-      window.scrollTo({ top: scrollY, left: 0, behavior: 'auto' });
-    };
-  }, []);
-
-  return (
-    <div className="fixed inset-0 z-40 grid items-end bg-[hsl(var(--foreground)/.42)] p-0 backdrop-blur-sm sm:items-center sm:p-5" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="animate-rise-in max-h-[92dvh] w-full overflow-y-auto rounded-t-2xl border border-border bg-card p-5 shadow-2xl sm:mx-auto sm:max-w-lg sm:rounded-2xl sm:p-7" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <div className="mb-6 flex items-start justify-between gap-4">
-          <div>
-            <h2 id="modal-title" className="text-xl font-extrabold">{title}</h2>
-            {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
-          </div>
-          <button type="button" onClick={onClose} className="grid size-9 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="סגירה" data-testid="button-close-modal">
-            <X className="size-5" />
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
 
 function AppShell({ children, admin, onLogout }: { children: ReactNode; admin: Admin; onLogout: () => void }) {
   const [location] = useLocation();
   const [open, setOpen] = useState(false);
-  const activeItem = navItems.find((item) => item.href === location) || navItems[0];
+  const visibleNav = navItems.filter((item) => !('permission' in item) || admin.role === 'owner' || admin.permissions.includes(item.permission));
+  const activeItem = visibleNav.find((item) => item.href === location) || visibleNav[0];
   return (
     <div className="app-noise min-h-[100dvh] bg-background text-foreground">
       <aside className={`fixed inset-y-0 right-0 z-30 flex w-[276px] flex-col border-l border-sidebar-border bg-sidebar px-4 py-5 text-sidebar-foreground transition-transform duration-300 md:translate-x-0 ${open ? 'translate-x-0' : 'translate-x-full'}`}>
@@ -280,7 +129,7 @@ function AppShell({ children, admin, onLogout }: { children: ReactNode; admin: A
         </div>
         <div className="mb-3 px-3 text-[10px] font-bold uppercase tracking-[.18em] text-sidebar-foreground/40">ניהול שוטף</div>
         <nav className="grid gap-1" aria-label="ניווט ראשי">
-          {navItems.map((item) => {
+          {visibleNav.map((item) => {
             const Icon = item.icon;
             const selected = item.href === location;
             return (
@@ -536,6 +385,7 @@ function ProductsPage() {
   const update = useUpdateProduct();
   const remove = useDeleteProduct();
   const client = useQueryClient();
+  const canEdit = useCan('catalog.edit');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'active' | 'paused'>('all');
   const [modal, setModal] = useState(false);
@@ -604,21 +454,22 @@ function ProductsPage() {
     URL.revokeObjectURL(url);
     setFeedback(`הגיבוי ירד בהצלחה עם ${products.length} מחירים.`);
   };
-  return <div className="animate-rise-in"><PageHeader eyebrow="מחירון / מוצרים" title="המחירון שעונה במקומך." description="שמרו על שמות ברורים, כינויים שהלקוחות באמת משתמשים בהם, ומחירים שאפשר לסמוך עליהם." action={<div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={downloadBackup} disabled={query.isLoading || query.isError} data-testid="button-backup-products"><Download className="size-4" /> גיבוי נתונים</Button><Button variant="secondary" onClick={() => { setFeedback(null); setPastedMessage(''); setPasteModal(true); }} data-testid="button-paste-product"><ClipboardPaste className="size-4" /> הדבקת הודעה</Button><Button onClick={openCreate} data-testid="button-add-product"><Plus className="size-4" /> מוצר חדש</Button></div>} />
+  return <div className="animate-rise-in"><PageHeader eyebrow="מחירון / מוצרים" title="המחירון שעונה במקומך." description="שמרו על שמות ברורים, כינויים שהלקוחות באמת משתמשים בהם, ומחירים שאפשר לסמוך עליהם." action={<div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={downloadBackup} disabled={query.isLoading || query.isError} data-testid="button-backup-products"><Download className="size-4" /> גיבוי נתונים</Button>{canEdit && <><Button variant="secondary" onClick={() => { setFeedback(null); setPastedMessage(''); setPasteModal(true); }} data-testid="button-paste-product"><ClipboardPaste className="size-4" /> הדבקת הודעה</Button><Button onClick={openCreate} data-testid="button-add-product"><Plus className="size-4" /> מוצר חדש</Button></>}</div>} />
     {feedback && <div className="mb-5 flex items-center justify-between rounded-xl bg-secondary px-4 py-3 text-sm font-bold" data-testid="status-products-feedback"><span>{feedback}</span><button onClick={() => setFeedback(null)} aria-label="סגירת הודעה" data-testid="button-dismiss-products-feedback"><X className="size-4" /></button></div>}
     <div className="mb-5 flex flex-col gap-3 sm:flex-row"><div className="relative flex-1"><Search className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="חיפוש לפי מוצר או כינוי…" className="input-base w-full pr-10" data-testid="input-search-products" /></div><div className="flex rounded-lg border border-border bg-card p-1">{[['all', 'הכל'], ['active', 'פעילים'], ['paused', 'מושהים']].map(([value, label]) => <button type="button" key={value} onClick={() => setFilter(value as typeof filter)} className={`rounded-md px-3 py-2 text-xs font-bold ${filter === value ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}`} data-testid={`button-filter-products-${value}`}>{label}</button>)}</div></div>
-    {query.isLoading ? <div className="grid gap-3">{[1, 2, 3].map((item) => <Skeleton key={item} className="h-[84px]" />)}</div> : query.isError ? <QueryError message={getErrorMessage(query.error)} onRetry={() => query.refetch()} /> : visible.length === 0 ? <EmptyState icon={PackageOpen} title={search || filter !== 'all' ? 'לא נמצאו מוצרים' : 'המחירון עדיין ריק'} description={search || filter !== 'all' ? 'נסו לשנות את החיפוש או הסינון.' : 'הוסיפו את המוצר הראשון כדי שהבוט יוכל להתחיל לענות.'} action={!search && filter === 'all' ? <Button onClick={openCreate} data-testid="button-empty-add-product"><Plus className="size-4" /> הוספת מוצר</Button> : undefined} /> : <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm"><div className="hidden grid-cols-[1.6fr_1fr_1fr_110px_90px] gap-4 border-b border-border bg-secondary/45 px-5 py-3 text-xs font-bold text-muted-foreground md:grid"><span>מוצר</span><span>כינויים</span><span>מחיר</span><span>עודכן</span><span>מצב</span></div><div className="divide-y divide-border">{visible.map((product) => <ProductRow key={product.id} product={product} onEdit={openEdit} onToggle={toggle} onDelete={deleteProduct} />)}</div></div>}
+    {query.isLoading ? <div className="grid gap-3">{[1, 2, 3].map((item) => <Skeleton key={item} className="h-[84px]" />)}</div> : query.isError ? <QueryError message={getErrorMessage(query.error)} onRetry={() => query.refetch()} /> : visible.length === 0 ? <EmptyState icon={PackageOpen} title={search || filter !== 'all' ? 'לא נמצאו מוצרים' : 'המחירון עדיין ריק'} description={search || filter !== 'all' ? 'נסו לשנות את החיפוש או הסינון.' : 'הוסיפו את המוצר הראשון כדי שהבוט יוכל להתחיל לענות.'} action={!search && filter === 'all' ? <Button onClick={openCreate} data-testid="button-empty-add-product"><Plus className="size-4" /> הוספת מוצר</Button> : undefined} /> : <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm"><div className="hidden grid-cols-[1.6fr_1fr_1fr_110px_90px] gap-4 border-b border-border bg-secondary/45 px-5 py-3 text-xs font-bold text-muted-foreground md:grid"><span>מוצר</span><span>כינויים</span><span>מחיר</span><span>עודכן</span><span>מצב</span></div><div className="divide-y divide-border">{visible.map((product) => <ProductRow key={product.id} product={product} onEdit={openEdit} onToggle={toggle} onDelete={deleteProduct} readOnly={!canEdit} />)}</div></div>}
     {modal && <Modal title={editing ? 'עריכת מוצר' : 'מוצר חדש'} description="הבוט משתמש בשם ובכינויים כדי לזהות את השאלה." onClose={() => setModal(false)}><form onSubmit={submit} className="grid gap-4"><Field label="שם המוצר"><input autoFocus required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="input-base" placeholder="למשל: קפה הפוך" data-testid="input-product-name" /></Field><div className="grid grid-cols-[1fr_88px] gap-3"><Field label="מחיר"><input required type="number" min="0" step="0.01" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} className="input-base font-mono" dir="ltr" placeholder="18.50" data-testid="input-product-price" /></Field><Field label="מטבע"><input value={form.currency} onChange={(event) => setForm({ ...form, currency: event.target.value })} className="input-base text-center" data-testid="input-product-currency" /></Field></div><Field label="כינויים" hint="הפרידו בין כינויים בפסיק"><input value={form.aliases} onChange={(event) => setForm({ ...form, aliases: event.target.value })} className="input-base" placeholder="הפוך, קפה עם חלב" data-testid="input-product-aliases" /></Field><label className="flex cursor-pointer items-center justify-between rounded-xl bg-secondary/60 p-3 text-sm font-bold"><span>המוצר זמין לבוט</span><input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} className="size-4 accent-[hsl(var(--primary))]" data-testid="input-product-active" /></label>{feedback && <p className="text-sm font-bold text-destructive" data-testid="status-product-form">{feedback}</p>}<div className="mt-2 flex gap-2"><Button type="submit" disabled={create.isPending || update.isPending} className="flex-1" data-testid="button-save-product"><Check className="size-4" /> {create.isPending || update.isPending ? 'שומר…' : 'שמירת מוצר'}</Button><Button type="button" variant="secondary" onClick={() => setModal(false)} data-testid="button-cancel-product">ביטול</Button></div></form></Modal>}
     {pasteModal && <Modal title="הוספה מהודעת מחירון" description="הדביקו את כל ההודעה. המסלול, המחירים, המרחק, הזמן וההמתנה ייקלטו אוטומטית." onClose={() => setPasteModal(false)}><div className="grid gap-4"><Field label="הודעת המחירון"><textarea autoFocus value={pastedMessage} onChange={(event) => setPastedMessage(event.target.value)} className="input-base min-h-72 resize-y font-mono text-xs leading-6" placeholder="הדביקו כאן את הודעת המחירון…" data-testid="input-pasted-price-message" /></Field>{feedback && <p className="text-sm font-bold text-destructive" data-testid="status-pasted-price-message">{feedback}</p>}<div className="flex gap-2"><Button type="button" onClick={importPastedMessage} disabled={!pastedMessage.trim() || create.isPending || update.isPending} className="flex-1" data-testid="button-import-pasted-price"><ClipboardPaste className="size-4" /> {create.isPending || update.isPending ? 'מכניס למחירון…' : 'הכנסה למחירון'}</Button><Button type="button" variant="secondary" onClick={() => setPasteModal(false)}>ביטול</Button></div></div></Modal>}
   </div>;
 }
 
-function ProductRow({ product, onEdit, onToggle, onDelete }: { product: Product; onEdit: (product: Product) => void; onToggle: (product: Product) => void; onDelete: (product: Product) => void }) {
-  return <div className="grid items-center gap-3 px-4 py-4 sm:px-5 md:grid-cols-[1.6fr_1fr_1fr_110px_90px] md:gap-4"><div className="flex items-center gap-3"><div className="grid size-10 shrink-0 place-items-center rounded-xl bg-secondary text-primary"><PackageOpen className="size-[18px]" /></div><div className="min-w-0"><p className="truncate text-sm font-extrabold" data-testid={`text-product-name-${product.id}`}>{product.name}</p><p className="mt-0.5 text-xs text-muted-foreground md:hidden">{product.price.toFixed(2)} {product.currency}</p></div></div><div className="hidden min-w-0 md:block">{product.aliases.length ? <div className="flex flex-wrap gap-1">{product.aliases.slice(0, 2).map((alias) => <span key={alias} className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{alias}</span>)}</div> : <span className="text-xs text-muted-foreground">אין כינויים</span>}</div><div className="hidden font-mono text-sm font-bold md:block" dir="ltr" data-testid={`text-product-price-${product.id}`}>{product.price.toFixed(2)} {product.currency}</div><div className="hidden text-xs text-muted-foreground md:block">{formatDate(product.updatedAt)}</div><div className="flex items-center justify-between gap-2 md:justify-end"><Badge tone={product.active ? 'green' : 'neutral'}>{product.active ? 'פעיל' : 'מושהה'}</Badge><div className="flex gap-1"><button type="button" onClick={() => onToggle(product)} className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-primary" aria-label={product.active ? 'השהיית מוצר' : 'הפעלת מוצר'} data-testid={`button-toggle-product-${product.id}`}><Power className="size-4" /></button><button type="button" onClick={() => onEdit(product)} className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-primary" aria-label="עריכת מוצר" data-testid={`button-edit-product-${product.id}`}><Pencil className="size-4" /></button><button type="button" onClick={() => onDelete(product)} className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-[hsl(var(--destructive)/.1)] hover:text-destructive" aria-label="מחיקת מוצר" data-testid={`button-delete-product-${product.id}`}><Trash2 className="size-4" /></button></div></div></div>;
+function ProductRow({ product, onEdit, onToggle, onDelete, readOnly = false }: { product: Product; onEdit: (product: Product) => void; onToggle: (product: Product) => void; onDelete: (product: Product) => void; readOnly?: boolean }) {
+  return <div className="grid items-center gap-3 px-4 py-4 sm:px-5 md:grid-cols-[1.6fr_1fr_1fr_110px_90px] md:gap-4"><div className="flex items-center gap-3"><div className="grid size-10 shrink-0 place-items-center rounded-xl bg-secondary text-primary"><PackageOpen className="size-[18px]" /></div><div className="min-w-0"><p className="truncate text-sm font-extrabold" data-testid={`text-product-name-${product.id}`}>{product.name}</p><p className="mt-0.5 text-xs text-muted-foreground md:hidden">{product.price.toFixed(2)} {product.currency}</p></div></div><div className="hidden min-w-0 md:block">{product.aliases.length ? <div className="flex flex-wrap gap-1">{product.aliases.slice(0, 2).map((alias) => <span key={alias} className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{alias}</span>)}</div> : <span className="text-xs text-muted-foreground">אין כינויים</span>}</div><div className="hidden font-mono text-sm font-bold md:block" dir="ltr" data-testid={`text-product-price-${product.id}`}>{product.price.toFixed(2)} {product.currency}</div><div className="hidden text-xs text-muted-foreground md:block">{formatDate(product.updatedAt)}</div><div className="flex items-center justify-between gap-2 md:justify-end"><Badge tone={product.active ? 'green' : 'neutral'}>{product.active ? 'פעיל' : 'מושהה'}</Badge><div className={`flex gap-1 ${readOnly ? 'hidden' : ''}`}><button type="button" onClick={() => onToggle(product)} className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-primary" aria-label={product.active ? 'השהיית מוצר' : 'הפעלת מוצר'} data-testid={`button-toggle-product-${product.id}`}><Power className="size-4" /></button><button type="button" onClick={() => onEdit(product)} className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-primary" aria-label="עריכת מוצר" data-testid={`button-edit-product-${product.id}`}><Pencil className="size-4" /></button><button type="button" onClick={() => onDelete(product)} className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-[hsl(var(--destructive)/.1)] hover:text-destructive" aria-label="מחיקת מוצר" data-testid={`button-delete-product-${product.id}`}><Trash2 className="size-4" /></button></div></div></div>;
 }
 
 type TargetForm = { kind: 'contact' | 'group'; identifier: string; label: string };
 function TargetsPage() {
+  const canManageTargets = useCan('targets.manage');
   const query = useListTargets();
   const groupsQuery = useListWhatsAppGroups();
   const targets = query.data || [];
@@ -640,7 +491,7 @@ function TargetsPage() {
   };
   const toggle = (target: Target) => update.mutate({ id: target.id, data: { active: !target.active } }, { onSuccess: () => { client.invalidateQueries({ queryKey: getListTargetsQueryKey() }); client.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); }, onError: (error) => setFeedback(getErrorMessage(error)) });
   const removeTarget = (target: Target) => { if (window.confirm(`להסיר את ${target.label} מרשימת היעדים?`)) remove.mutate({ id: target.id }, { onSuccess: () => { client.invalidateQueries({ queryKey: getListTargetsQueryKey() }); client.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); }, onError: (error) => setFeedback(getErrorMessage(error)) }); };
-  return <div className="animate-rise-in"><PageHeader eyebrow="היעדים הפרטיים שלכם / הרשאות" title="אתם מחליטים מי מקבל מענה." description="רשימה זו פרטית למנהל המחובר: הפעילו את הבוט רק עבור אנשי הקשר והקבוצות שלכם. שינוי מצב נכנס לתוקף מיד." action={<Button onClick={() => { setForm({ kind: 'contact', identifier: '', label: '' }); setFeedback(null); setModal(true); }} data-testid="button-add-target"><Plus className="size-4" /> יעד חדש</Button>} />
+  return <div className="animate-rise-in"><PageHeader eyebrow="היעדים הפרטיים שלכם / הרשאות" title="אתם מחליטים מי מקבל מענה." description="רשימה זו פרטית למנהל המחובר: הפעילו את הבוט רק עבור אנשי הקשר והקבוצות שלכם. שינוי מצב נכנס לתוקף מיד." action={canManageTargets ? <Button onClick={() => { setForm({ kind: 'contact', identifier: '', label: '' }); setFeedback(null); setModal(true); }} data-testid="button-add-target"><Plus className="size-4" /> יעד חדש</Button> : undefined} />
     {feedback && <div className="mb-5 rounded-xl bg-secondary px-4 py-3 text-sm font-bold" data-testid="status-targets-feedback">{feedback}</div>}
     <div className="mb-5 flex flex-col gap-3 sm:flex-row"><div className="relative flex-1"><Search className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="חיפוש יעד…" className="input-base w-full pr-10" data-testid="input-search-targets" /></div><div className="flex rounded-lg border border-border bg-card p-1">{[['all', 'הכל'], ['contact', 'אנשי קשר'], ['group', 'קבוצות']].map(([value, label]) => <button type="button" key={value} onClick={() => setKind(value as typeof kind)} className={`rounded-md px-3 py-2 text-xs font-bold ${kind === value ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}`} data-testid={`button-filter-targets-${value}`}>{label}</button>)}</div></div>
     {query.isLoading ? <div className="grid gap-3">{[1, 2].map((item) => <Skeleton key={item} className="h-20" />)}</div> : query.isError ? <QueryError message={getErrorMessage(query.error)} onRetry={() => query.refetch()} /> : visible.length === 0 ? <EmptyState icon={UsersRound} title="אין יעדים ברשימה" description={search || kind !== 'all' ? 'לא נמצאו יעדים בסינון הנוכחי.' : 'הוסיפו איש קשר או קבוצה כדי לבחור מי יקבל מחירים בוואטסאפ.'} action={!search && kind === 'all' ? <Button onClick={() => setModal(true)} data-testid="button-empty-add-target"><Plus className="size-4" /> הוספת יעד</Button> : undefined} /> : <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm"><div className="hidden grid-cols-[1.2fr_1.5fr_1fr_130px_90px] gap-4 border-b border-border bg-secondary/45 px-5 py-3 text-xs font-bold text-muted-foreground md:grid"><span>סוג</span><span>שם / מזהה</span><span>נוסף בתאריך</span><span>מצב</span><span /></div><div className="divide-y divide-border">{visible.map((target) => <TargetRow key={target.id} target={target} onToggle={toggle} onDelete={removeTarget} />)}</div></div>}
@@ -653,37 +504,14 @@ function TargetRow({ target, onToggle, onDelete }: { target: Target; onToggle: (
   return <div className="grid items-center gap-3 px-4 py-4 sm:px-5 md:grid-cols-[1.2fr_1.5fr_1fr_130px_90px] md:gap-4"><div className="flex items-center gap-2 text-sm font-bold"><div className="grid size-9 place-items-center rounded-lg bg-secondary text-primary"><Icon className="size-4" /></div>{target.kind === 'contact' ? 'איש קשר' : 'קבוצה'}</div><div className="min-w-0"><p className="truncate text-sm font-extrabold" data-testid={`text-target-label-${target.id}`}>{target.label}</p><p className="mt-0.5 truncate font-mono text-xs text-muted-foreground" dir="ltr">{target.identifier}</p></div><span className="hidden text-xs text-muted-foreground md:block">{formatDate(target.addedAt)}</span><div className="flex items-center justify-between gap-2 md:justify-start"><button type="button" onClick={() => onToggle(target)} className={`relative h-6 w-11 rounded-full ${target.active ? 'bg-primary' : 'bg-muted-foreground/30'}`} aria-label={target.active ? 'השבתת יעד' : 'הפעלת יעד'} data-testid={`button-toggle-target-${target.id}`}><span className={`absolute top-1 size-4 rounded-full bg-card shadow-sm transition-transform ${target.active ? 'right-1' : 'right-6'}`} /></button><Badge tone={target.active ? 'green' : 'neutral'}>{target.active ? 'פעיל' : 'מושהה'}</Badge></div><button type="button" onClick={() => onDelete(target)} className="grid size-8 place-items-center justify-self-end rounded-lg text-muted-foreground hover:bg-[hsl(var(--destructive)/.1)] hover:text-destructive" aria-label="הסרת יעד" data-testid={`button-delete-target-${target.id}`}><Trash2 className="size-4" /></button></div>;
 }
 
-function AdminsPage({ currentAdmin }: { currentAdmin: Admin }) {
-  const query = useListAdmins();
-  const admins = query.data || [];
-  const create = useCreateAdmin();
-  const remove = useDeleteAdmin();
-  const setAdminCode = useSetAdminCode();
-  const client = useQueryClient();
-  const [modal, setModal] = useState(false);
-  const [form, setForm] = useState({ phone: '', label: '' });
-  const [feedback, setFeedback] = useState<string | null>(null);
-  const [codeAdmin, setCodeAdmin] = useState<Admin | null>(null);
-  const [code, setPersonalCode] = useState('');
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    if (!form.phone.trim()) { setFeedback('הזינו מספר טלפון תקין.'); return; }
-    create.mutate({ data: { phone: form.phone.trim(), label: form.label.trim() } }, { onSuccess: () => { client.invalidateQueries({ queryKey: getListAdminsQueryKey() }); client.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); setModal(false); setForm({ phone: '', label: '' }); setFeedback('המנהל נוסף בהצלחה.'); }, onError: (error) => setFeedback(getErrorMessage(error)) });
-  };
-  const deleteAdmin = (admin: Admin) => { if (admin.role === 'owner') { setFeedback('אי אפשר להסיר את בעל החשבון.'); return; } if (window.confirm(`להסיר את ${admin.phone} כמנהל?`)) remove.mutate({ id: admin.id }, { onSuccess: () => client.invalidateQueries({ queryKey: getListAdminsQueryKey() }), onError: (error) => setFeedback(getErrorMessage(error)) }); };
-  const saveCode = (event: FormEvent) => { event.preventDefault(); if (!codeAdmin || !/^\d{4,8}$/.test(code)) { setFeedback('הקוד חייב להכיל 4–8 ספרות.'); return; } setAdminCode.mutate({ id: codeAdmin.id, data: { code } }, { onSuccess: () => { setCodeAdmin(null); setPersonalCode(''); setFeedback('הקוד האישי נשמר.'); }, onError: (error) => setFeedback(getErrorMessage(error)) }); };
-  const owner = currentAdmin.role === 'owner';
-  return <div className="animate-rise-in"><PageHeader eyebrow="גישה / צוות" title="מי רשאי לנהל את הבוט?" description={owner ? "כבעלים, תוכלו להוסיף מנהלים ולהגדיר להם קוד אישי." : "רק בעל המערכת יכול לשנות מנהלים וקודים אישיים."} action={owner ? <Button onClick={() => { setFeedback(null); setModal(true); }} data-testid="button-add-admin"><Plus className="size-4" /> מנהל חדש</Button> : undefined} />
-    {feedback && <div className="mb-5 rounded-xl bg-secondary px-4 py-3 text-sm font-bold" data-testid="status-admins-feedback">{feedback}</div>}
-    {query.isLoading ? <div className="grid gap-3">{[1, 2].map((item) => <Skeleton key={item} className="h-20" />)}</div> : query.isError ? <QueryError message={getErrorMessage(query.error)} onRetry={() => query.refetch()} /> : <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm"><div className="divide-y divide-border">{admins.map((admin) => <div key={admin.id} className="flex items-center justify-between gap-3 px-4 py-4 sm:px-5"><div><p className="text-sm font-extrabold">{admin.label}</p><p className="font-mono text-xs text-muted-foreground" dir="ltr">{admin.phone}</p></div><div className="flex items-center gap-2"><Badge tone={admin.role === 'owner' ? 'amber' : 'neutral'}>{admin.role === 'owner' ? 'בעלים' : 'מנהל'}</Badge>{owner && <Button variant="ghost" onClick={() => { setCodeAdmin(admin); setPersonalCode(''); }}>קוד</Button>}{owner && <button type="button" onClick={() => deleteAdmin(admin)} disabled={admin.role === 'owner'} className="text-destructive disabled:text-muted-foreground"><Trash2 className="size-4" /></button>}</div></div>)}</div></div>}
-    {modal && <Modal title="מנהל חדש" description="המספר יוכל להיכנס ולנהל את הגדרות הבוט." onClose={() => setModal(false)}><form onSubmit={submit} className="grid gap-4"><Field label="מספר טלפון" hint="כולל קידומת מדינה, ללא סימן +."><input autoFocus required value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} className="input-base font-mono" dir="ltr" placeholder="972501234567" data-testid="input-admin-phone" /></Field><Field label="שם או תיאור"><input value={form.label} onChange={(event) => setForm({ ...form, label: event.target.value })} className="input-base" placeholder="למשל: יעל, מנהלת החנות" data-testid="input-admin-label" /></Field>{feedback && <p className="text-sm font-bold text-destructive">{feedback}</p>}<div className="mt-2 flex gap-2"><Button type="submit" disabled={create.isPending} className="flex-1" data-testid="button-save-admin"><Check className="size-4" /> {create.isPending ? 'שומר…' : 'הוספת מנהל'}</Button><Button type="button" variant="secondary" onClick={() => setModal(false)} data-testid="button-cancel-admin">ביטול</Button></div></form></Modal>}
-    {codeAdmin && <Modal title={`קוד אישי עבור ${codeAdmin.label}`} description="בחרו קוד בן 4 עד 8 ספרות. הקוד נשמר בצורה מוצפנת בלבד." onClose={() => setCodeAdmin(null)}><form onSubmit={saveCode} className="grid gap-4"><Field label="קוד אישי"><input autoFocus required value={code} onChange={(event) => setPersonalCode(event.target.value.replace(/\D/g, '').slice(0, 8))} inputMode="numeric" type="password" className="input-base font-mono" dir="ltr" /></Field><Button type="submit" disabled={setAdminCode.isPending}>{setAdminCode.isPending ? 'שומר…' : 'שמירת קוד'}</Button></form></Modal>}
-  </div>;
-}
-
 function SettingsPage() {
   const query = useGetWhatsAppStatus();
   const connect = useConnectWhatsApp();
+  const pair = usePairWhatsApp();
+  const canManageWhatsApp = useCan('whatsapp.manage');
+  const me = useSessionAdmin();
+  const [pairPhone, setPairPhone] = useState('');
+  const [pairError, setPairError] = useState<string | null>(null);
   const disconnect = useDisconnectWhatsApp();
   const status = query.data;
   const pairing = status?.connectionState === 'initializing' || status?.connectionState === 'qr_ready' || status?.connectionState === 'pairing_code_ready';
@@ -694,12 +522,13 @@ function SettingsPage() {
   }, [pairing, query.refetch]);
   const refresh = () => { void query.refetch(); };
   const onConnect = () => connect.mutate(undefined, { onSuccess: refresh });
-  const onDisconnect = () => disconnect.mutate(undefined, { onSuccess: refresh });
-  const action = status?.connected ? <Button variant="danger" onClick={onDisconnect} disabled={disconnect.isPending} data-testid="button-disconnect-whatsapp"><Power className="size-4" /> {disconnect.isPending ? 'מנתק…' : 'ניתוק'}</Button>
+  const onDisconnect = () => { if (!status?.connected || window.confirm('לנתק את WhatsApp? הבוט יפסיק לענות עד לחיבור מחדש.')) disconnect.mutate(undefined, { onSuccess: refresh }); };
+  const onPair = (event: FormEvent) => { event.preventDefault(); setPairError(null); pair.mutate({ data: { phoneNumber: pairPhone.trim() } }, { onSuccess: refresh, onError: (e) => setPairError(getErrorMessage(e)) }); };
+  const action = !canManageWhatsApp ? undefined : status?.connected ? <Button variant="danger" onClick={onDisconnect} disabled={disconnect.isPending} data-testid="button-disconnect-whatsapp"><Power className="size-4" /> {disconnect.isPending ? 'מנתק…' : 'ניתוק'}</Button>
     : pairing ? <Button variant="danger" onClick={onDisconnect} disabled={disconnect.isPending} data-testid="button-disconnect-whatsapp"><X className="size-4" /> ביטול חיבור</Button>
     : <Button onClick={onConnect} disabled={connect.isPending} data-testid="button-connect-whatsapp"><Wifi className="size-4" /> {connect.isPending ? 'מתחבר…' : 'חיבור WhatsApp'}</Button>;
   return <div className="animate-rise-in"><PageHeader eyebrow="ה-WhatsApp שלכם / חיבור" title="החיבור שמחזיק את הכול." description="זהו חיבור ה-WhatsApp הפרטי של המנהל המחובר. חברו אותו כדי שהבוט יקבל הודעות אמיתיות ויענה רק ביעדים הפרטיים שלכם." action={<div className="flex gap-2">{action}<Button variant="secondary" onClick={refresh} disabled={query.isFetching} data-testid="button-refresh-status"><RefreshCcw className={`size-4 ${query.isFetching ? 'animate-spin' : ''}`} /> רענון</Button></div>} />
-    {query.isLoading ? <div className="grid gap-4 lg:grid-cols-2"><Skeleton className="h-56" /><Skeleton className="h-56" /></div> : query.isError ? <QueryError message={getErrorMessage(query.error)} onRetry={refresh} /> : <><div className="grid gap-4 lg:grid-cols-2"><StatusCard icon={Wifi} title="חיבור WhatsApp" ok={Boolean(status?.connected)} label={status?.connected ? 'מחובר' : pairing ? 'ממתין לחיבור' : 'לא מחובר'} description={status?.connected ? 'המספר יכול לקבל הודעות ולענות למחירים.' : 'החיבור נעשה ישירות דרך WhatsApp Web.'}><div className="mt-6 grid gap-3 border-t border-border pt-4 text-sm"><div className="flex justify-between gap-4"><span className="text-muted-foreground">ספק</span><strong>{status?.provider || 'לא ידוע'}</strong></div><div className="flex justify-between gap-4"><span className="text-muted-foreground">מספר מחובר</span><strong className="font-mono" dir="ltr">{status?.phoneNumber || '—'}</strong></div><div className="flex justify-between gap-4"><span className="text-muted-foreground">מצב</span><strong data-testid="whatsapp-polling-status">{pairing ? 'בודק חיבור כל 3 שניות' : status?.connectionState || 'מנותק'}</strong></div></div></StatusCard><StatusCard icon={Webhook} title="הודעות נכנסות" ok={Boolean(status?.connected)} label={status?.connected ? 'מוכן' : 'ממתין לחיבור'} description="הבוט עונה לשיחות ולקבוצות שהוגדרו כיעדים פעילים בלבד."><div className="mt-6 rounded-xl bg-secondary/65 p-4 text-xs leading-6 text-muted-foreground"><span className="font-bold text-foreground">מה נבדק?</span><br />הודעות נכנסות מנותבות למנוע המחירים ונרשמות לבדיקה.</div></StatusCard></div>{status?.pairingCode && <section className="mt-6 rounded-2xl border border-border bg-card p-5 text-center shadow-sm sm:p-6"><h2 className="font-extrabold">קוד לחיבור WhatsApp</h2><p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-muted-foreground">בטלפון: מכשירים מקושרים ← קישור מכשיר ← קישור באמצעות מספר טלפון, ואז הזינו את הקוד.</p><div className="mx-auto mt-5 w-fit rounded-xl border border-border bg-secondary px-6 py-4 font-mono text-3xl font-black tracking-[0.25em]" dir="ltr" data-testid="text-whatsapp-pairing-code">{status.pairingCode}</div></section>}{status?.qrCode && <section className="mt-6 rounded-2xl border border-border bg-card p-5 text-center shadow-sm sm:p-6"><h2 className="font-extrabold">סריקת קוד לחיבור</h2><p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-muted-foreground">פתחו את WhatsApp בטלפון, עברו אל מכשירים מקושרים, בחרו קישור מכשיר וסרקו את קוד ה-QR.</p><img src={status.qrCode} alt="קוד QR לחיבור WhatsApp" className="mx-auto mt-5 size-64 rounded-xl border border-border bg-white p-3" data-testid="image-whatsapp-qr" /></section>}{status?.lastError && <div className="mt-6 rounded-xl bg-[hsl(var(--destructive)/.08)] p-4 text-sm font-bold text-destructive" data-testid="status-whatsapp-error">{status.lastError}</div>}<section className="mt-6 rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-6"><div className="flex items-start gap-3"><div className="grid size-10 place-items-center rounded-xl bg-secondary text-primary"><ShieldCheck className="size-5" /></div><div><h2 className="font-extrabold">המלצת אבטחה</h2><p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">שמרו את החיבור פרטי, הגבילו הרשאות מנהלים, והפעילו את הבוט רק ביעדים שאתם מזהים. כך כל תשובה נשארת בשליטה.</p></div></div></section></>}
+    {query.isLoading ? <div className="grid gap-4 lg:grid-cols-2"><Skeleton className="h-56" /><Skeleton className="h-56" /></div> : query.isError ? <QueryError message={getErrorMessage(query.error)} onRetry={refresh} /> : <><div className="grid gap-4 lg:grid-cols-2"><StatusCard icon={Wifi} title="חיבור WhatsApp" ok={Boolean(status?.connected)} label={status?.connected ? 'מחובר' : pairing ? 'ממתין לחיבור' : 'לא מחובר'} description={status?.connected ? 'המספר יכול לקבל הודעות ולענות למחירים.' : 'החיבור נעשה ישירות דרך WhatsApp Web.'}><div className="mt-6 grid gap-3 border-t border-border pt-4 text-sm"><div className="flex justify-between gap-4"><span className="text-muted-foreground">ספק</span><strong>{status?.provider || 'לא ידוע'}</strong></div><div className="flex justify-between gap-4"><span className="text-muted-foreground">מספר מחובר</span><strong className="font-mono" dir="ltr">{status?.phoneNumber || '—'}</strong></div><div className="flex justify-between gap-4"><span className="text-muted-foreground">מצב</span><strong data-testid="whatsapp-polling-status">{pairing ? 'בודק חיבור כל 3 שניות' : status?.connectionState || 'מנותק'}</strong></div></div></StatusCard><StatusCard icon={Webhook} title="הודעות נכנסות" ok={Boolean(status?.connected)} label={status?.connected ? 'מוכן' : 'ממתין לחיבור'} description="הבוט עונה לשיחות ולקבוצות שהוגדרו כיעדים פעילים בלבד."><div className="mt-6 rounded-xl bg-secondary/65 p-4 text-xs leading-6 text-muted-foreground"><span className="font-bold text-foreground">מה נבדק?</span><br />הודעות נכנסות מנותבות למנוע המחירים ונרשמות לבדיקה.</div></StatusCard></div>{status?.pairingCode && <section className="mt-6 rounded-2xl border border-border bg-card p-5 text-center shadow-sm sm:p-6"><h2 className="font-extrabold">קוד לחיבור WhatsApp</h2><p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-muted-foreground">בטלפון: מכשירים מקושרים ← קישור מכשיר ← קישור באמצעות מספר טלפון, ואז הזינו את הקוד.</p><div className="mx-auto mt-5 w-fit rounded-xl border border-border bg-secondary px-6 py-4 font-mono text-3xl font-black tracking-[0.25em]" dir="ltr" data-testid="text-whatsapp-pairing-code">{status.pairingCode}</div></section>}{me?.sharedWhatsapp && <div className="mt-6 rounded-xl bg-secondary p-4 text-sm font-bold">את/ה עובד/ת על חיבור ה־WhatsApp המשותף של החשבון. אין צורך בסריקת QR נוספת.</div>}{canManageWhatsApp && !status?.connected && !status?.pairingCode && <section className="mt-6 rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-6"><h2 className="font-extrabold">חיבור בלי סריקה: קוד צימוד</h2><p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">נוח כשהאתר פתוח באותו טלפון. הזינו את מספר ה־WhatsApp שמחברים, ובטלפון בחרו: מכשירים מקושרים ← קישור מכשיר ← קישור באמצעות מספר טלפון.</p><form onSubmit={onPair} className="mt-4 flex flex-col gap-2 sm:flex-row"><input value={pairPhone} onChange={(e) => setPairPhone(e.target.value)} className="input-base flex-1 font-mono" dir="ltr" inputMode="tel" placeholder="050-1234567" required data-testid="input-pair-phone" /><Button type="submit" disabled={pair.isPending}><Smartphone className="size-4" /> {pair.isPending ? 'מבקש קוד…' : 'קבלת קוד צימוד'}</Button></form>{pairError && <p className="mt-2 text-sm font-bold text-destructive">{pairError}</p>}</section>}{status?.qrCode && <section className="mt-6 rounded-2xl border border-border bg-card p-5 text-center shadow-sm sm:p-6"><h2 className="font-extrabold">סריקת קוד לחיבור</h2><p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-muted-foreground">פתחו את WhatsApp בטלפון, עברו אל מכשירים מקושרים, בחרו קישור מכשיר וסרקו את קוד ה-QR.</p><img src={status.qrCode} alt="קוד QR לחיבור WhatsApp" className="mx-auto mt-5 size-64 rounded-xl border border-border bg-white p-3" data-testid="image-whatsapp-qr" /></section>}{status?.lastError && <div className="mt-6 rounded-xl bg-[hsl(var(--destructive)/.08)] p-4 text-sm font-bold text-destructive" data-testid="status-whatsapp-error">{status.lastError}</div>}<section className="mt-6 rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-6"><div className="flex items-start gap-3"><div className="grid size-10 place-items-center rounded-xl bg-secondary text-primary"><ShieldCheck className="size-5" /></div><div><h2 className="font-extrabold">המלצת אבטחה</h2><p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">שמרו את החיבור פרטי, הגבילו הרשאות מנהלים, והפעילו את הבוט רק ביעדים שאתם מזהים. כך כל תשובה נשארת בשליטה.</p></div></div></section></>}
   </div>;
 }
 
@@ -708,21 +537,78 @@ function StatusCard({ icon: Icon, title, ok, label, description, children }: { i
 }
 
 function LoginScreen({ bootstrap, onSuccess }: { bootstrap: boolean; onSuccess: () => void }) {
-  const adminsQuery = useListLoginAdmins();
-  const login = useLoginAdmin();
   const setup = useBootstrapOwnerCode();
-  const [adminId, setAdminId] = useState<number | null>(null);
+  const requestCode = useRequestLoginCode();
+  const verifyCode = useVerifyLoginCode();
+  const pinLogin = useLoginWithPin();
+  const [identifier, setIdentifier] = useState(() => { try { return localStorage.getItem('login-identifier') ?? ''; } catch { return ''; } });
+  const [step, setStep] = useState<'identify' | 'whatsapp' | 'pin'>('identify');
   const [code, setCode] = useState('');
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const pending = setup.isPending || requestCode.isPending || verifyCode.isPending || pinLogin.isPending;
+  const remember = () => { try { localStorage.setItem('login-identifier', identifier.trim()); } catch { /* private mode */ } };
+  const done = () => { remember(); setCode(''); onSuccess(); };
+  const fail = (e: unknown) => setError(getErrorMessage(e));
+  const validIdentifier = identifier.trim().includes('@') ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier.trim()) : identifier.replace(/\D/g, '').length >= 9;
+
+  const sendCode = () => {
+    if (!validIdentifier) { setError('הזינו מספר טלפון או אימייל תקינים.'); return; }
+    setError(null);
+    requestCode.mutate({ data: { identifier: identifier.trim() } }, {
+      onSuccess: (result) => { remember(); setStep('whatsapp'); setCode(''); setNotice(result.destination ? `שלחנו קוד בן 6 ספרות ל־WhatsApp שמסתיים ב־${result.destination.replace('•••', '')}.` : 'אם המספר רשום במערכת, נשלח אליו קוד ב־WhatsApp.'); },
+      onError: fail,
+    });
+  };
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!/^\d{4,8}$/.test(code) || (!bootstrap && !adminId)) { setError('בחרו מנהל והזינו קוד בן 4–8 ספרות.'); return; }
-    const done = () => { setCode(''); onSuccess(); };
-    if (bootstrap) setup.mutate({ data: { code } }, { onSuccess: done, onError: (e) => setError(getErrorMessage(e)) });
-    else login.mutate({ data: { adminId: adminId!, code } }, { onSuccess: done, onError: (e) => setError(getErrorMessage(e)) });
+    setError(null);
+    if (bootstrap) {
+      if (!/^\d{4,8}$/.test(code)) { setError('הקוד חייב להכיל 4–8 ספרות.'); return; }
+      setup.mutate({ data: { code } }, { onSuccess: done, onError: fail });
+    } else if (step === 'identify') {
+      sendCode();
+    } else if (step === 'whatsapp') {
+      if (!/^\d{6}$/.test(code)) { setError('הקוד מ־WhatsApp מכיל 6 ספרות.'); return; }
+      verifyCode.mutate({ data: { identifier: identifier.trim(), code } }, { onSuccess: done, onError: fail });
+    } else {
+      if (!validIdentifier || !/^\d{4,8}$/.test(code)) { setError('הזינו טלפון/אימייל וקוד אישי בן 4–8 ספרות.'); return; }
+      pinLogin.mutate({ data: { identifier: identifier.trim(), code } }, { onSuccess: done, onError: fail });
+    }
   };
-  const pending = login.isPending || setup.isPending;
-  return <main className="app-noise grid min-h-[100dvh] place-items-center bg-background p-5" dir="rtl"><section className="w-full max-w-md rounded-3xl border border-border bg-card p-7 shadow-xl sm:p-9"><div className="mb-7 grid size-14 place-items-center rounded-2xl bg-primary text-primary-foreground"><ShieldCheck className="size-7" /></div><p className="text-xs font-extrabold tracking-[.16em] text-primary">מחירון בוואטסאפ</p><h1 className="mt-2 text-3xl font-extrabold">{bootstrap ? 'הגדרה חד־פעמית לבעלים' : 'כניסה לחדר הבקרה'}</h1><p className="mt-2 text-sm leading-6 text-muted-foreground">{bootstrap ? 'מיכאל, הגדירו כעת קוד אישי. לאחר השמירה ניתן יהיה לשנות קודים רק מתוך חשבון הבעלים.' : 'בחרו את שמכם והזינו את הקוד האישי שלכם.'}</p><form onSubmit={submit} className="mt-7 grid gap-4">{!bootstrap && <Field label="מנהל"><select required value={adminId ?? ''} onChange={(e) => setAdminId(Number(e.target.value) || null)} className="input-base"><option value="">בחרו מנהל</option>{(adminsQuery.data || []).map((admin) => <option key={admin.id} value={admin.id}>{admin.label}{admin.role === 'owner' ? ' · בעלים' : ''}</option>)}</select></Field>}<Field label="קוד אישי"><input autoFocus required value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 8))} inputMode="numeric" type="password" className="input-base font-mono text-center text-lg tracking-[.35em]" dir="ltr" placeholder="••••" /></Field>{error && <p className="text-sm font-bold text-destructive">{error}</p>}<Button type="submit" disabled={pending || adminsQuery.isLoading} className="mt-2 w-full">{pending ? 'מאמתים…' : bootstrap ? 'שמירת קוד הבעלים' : 'כניסה מאובטחת'}</Button></form></section></main>;
+
+  return <main className="app-noise grid min-h-[100dvh] place-items-center bg-background p-5" dir="rtl">
+    <section className="w-full max-w-md rounded-3xl border border-border bg-card p-7 shadow-xl sm:p-9">
+      <div className="mb-7 grid size-14 place-items-center rounded-2xl bg-primary text-primary-foreground"><ShieldCheck className="size-7" /></div>
+      <p className="text-xs font-extrabold tracking-[.16em] text-primary">מחירון בוואטסאפ</p>
+      <h1 className="mt-2 text-3xl font-extrabold">{bootstrap ? 'הגדרה חד־פעמית לבעלים' : step === 'whatsapp' ? 'הזינו את הקוד' : 'כניסה למערכת'}</h1>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+        {bootstrap ? 'בחרו קוד אישי לבעלים. לאחר השמירה ניתן יהיה לשנות קודים רק מתוך חשבון הבעלים.'
+          : step === 'identify' ? 'הזינו טלפון או אימייל, ונשלח לכם קוד כניסה ב־WhatsApp.'
+          : step === 'whatsapp' ? notice : 'כניסה עם הקוד האישי שקבע בעל המערכת.'}
+      </p>
+      <form onSubmit={submit} className="mt-7 grid gap-4">
+        {!bootstrap && step !== 'whatsapp' && <Field label="טלפון או אימייל">
+          <div className="relative">
+            {identifier.includes('@') ? <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /> : <Smartphone className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />}
+            <input autoFocus required value={identifier} onChange={(e) => setIdentifier(e.target.value)} className="input-base w-full pl-10 font-mono" dir="ltr" autoComplete="username" inputMode={identifier.includes('@') ? 'email' : 'tel'} placeholder="050-1234567" data-testid="input-login-identifier" />
+          </div>
+        </Field>}
+        {(bootstrap || step !== 'identify') && <Field label={step === 'whatsapp' ? 'קוד מ־WhatsApp' : 'קוד אישי'}>
+          <input autoFocus={step === 'whatsapp' || bootstrap} required value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, step === 'whatsapp' ? 6 : 8))} inputMode="numeric" autoComplete={step === 'whatsapp' ? 'one-time-code' : 'current-password'} type={step === 'whatsapp' ? 'text' : 'password'} className="input-base font-mono text-center text-lg tracking-[.35em]" dir="ltr" placeholder={step === 'whatsapp' ? '••••••' : '••••'} data-testid="input-login-code" />
+        </Field>}
+        {error && <p role="alert" className="text-sm font-bold text-destructive">{error}</p>}
+        <Button type="submit" disabled={pending} className="mt-1 w-full" data-testid="button-login-submit">
+          {pending ? 'רגע…' : bootstrap ? 'שמירת קוד הבעלים' : step === 'identify' ? <><Send className="size-4" /> שליחת קוד ב־WhatsApp</> : 'כניסה'}
+        </Button>
+        {!bootstrap && <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-sm">
+          {step === 'whatsapp' && <button type="button" onClick={sendCode} disabled={pending} className="font-bold text-primary hover:underline">שליחת קוד חדש</button>}
+          {step !== 'identify' && <button type="button" onClick={() => { setStep('identify'); setCode(''); setError(null); }} className="text-muted-foreground hover:text-foreground">חזרה</button>}
+          {step !== 'pin' && <button type="button" onClick={() => { setStep('pin'); setCode(''); setError(null); }} className="text-muted-foreground hover:text-foreground" data-testid="button-login-pin">כניסה עם קוד אישי</button>}
+        </div>}
+      </form>
+    </section>
+  </main>;
 }
 
 function Router() {
@@ -735,7 +621,7 @@ function Router() {
   if (!session.data) return <LoginScreen bootstrap={Boolean(status.data?.ownerSetupRequired)} onSuccess={reset} />;
   const onLogout = () => logout.mutate(undefined, { onSettled: () => { client.clear(); void session.refetch(); } });
   const admin = session.data.admin;
-  return <ErrorBoundary><AppShell admin={admin} onLogout={onLogout}><Switch><Route path="/" component={Dashboard} /><Route path="/products" component={ProductsPage} /><Route path="/abbreviations" component={AbbreviationsPage} /><Route path="/surge" component={SurgePage} /><Route path="/targets" component={TargetsPage} /><Route path="/admins">{() => <AdminsPage currentAdmin={admin} />}</Route><Route path="/settings" component={SettingsPage} /><Route component={NotFound} /></Switch></AppShell></ErrorBoundary>;
+  return <ErrorBoundary><SessionProvider admin={admin}><AppShell admin={admin} onLogout={onLogout}><Switch><Route path="/" component={Dashboard} /><Route path="/products" component={ProductsPage} /><Route path="/abbreviations" component={AbbreviationsPage} /><Route path="/surge" component={SurgePage} /><Route path="/targets" component={TargetsPage} /><Route path="/admins" component={UsersPage} /><Route path="/activity" component={ActivityPage} /><Route path="/settings" component={SettingsPage} /><Route component={NotFound} /></Switch></AppShell></SessionProvider></ErrorBoundary>;
 }
 
 function App() {

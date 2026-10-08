@@ -82,6 +82,8 @@ const cases: Case[] = [
   { name: "not a target", message: contact("מ בני ברק ירושלים", STRANGER) },
   { name: "management by admin", message: contact("ניהול", "972521234567") },
   { name: "management by customer", message: contact("ניהול") },
+  { name: "management by workspace owner", message: contact("ניהול", "972504107826") },
+  { name: "management by shared workspace member", message: contact("ניהול", "972531230000") },
   // Groups.
   { name: "group price request", message: group("מ בני ברק ירושלים") },
   { name: "group chatter ignored", message: group("מי נוסע מחר לירושלים?") },
@@ -92,8 +94,8 @@ const cases: Case[] = [
   { name: "second admin header", message: contact("מ בני ברק ירושלים"), adminPhone: SECOND_ADMIN_PHONE },
   { name: "second admin hourly", message: contact("מ לפי שעה"), adminPhone: SECOND_ADMIN_PHONE },
   // Surge pricing: quotes captured from the monitored group, then shown on lookup.
-  // Known issue (kept as-is): text identical to a two-city alias ("בב ים") is read as ONE place → ignored.
-  { name: "surge quote alias form ignored", message: group("בב ים 260", "972502222222", SURGE_GROUP) },
+  // Fixed: text identical to a two-city alias ("בב ים") used to be read as ONE place and ignored.
+  { name: "surge quote alias form", message: group("בב ים 260", "972502222222", SURGE_GROUP) },
   { name: "surge quote regular", message: group("בני ברק ירושלים 260", "972502222222", SURGE_GROUP) },
   { name: "surge quote minivan reverse", message: group("ים בני ברק 300 מיניק", "972502222222", SURGE_GROUP) },
   { name: "surge quote extra passenger", message: group("בני ברק ירושלים 6 מקומות מרווח 290 מעל", "972502222222", SURGE_GROUP) },
@@ -129,6 +131,9 @@ test("bot replies match the recorded snapshot", { timeout: 120_000 }, async () =
   const [second] = await db.insert(t.priceBotAdmins).values({ phone: SECOND_ADMIN_PHONE, label: "יצחק", role: "admin" })
     .onConflictDoUpdate({ target: t.priceBotAdmins.phone, set: { label: "יצחק", active: true } }).returning();
 
+  await db.insert(t.priceBotAdmins).values({ phone: "0531230000", label: "חבר צוות", role: "admin", whatsappOwnerId: owner.id })
+    .onConflictDoUpdate({ target: t.priceBotAdmins.phone, set: { active: true, whatsappOwnerId: owner.id } });
+
   await db.insert(t.priceBotProducts).values(products.map((p) => ({ currency: "ILS", active: true, ...p })));
   await db.insert(t.priceBotAbbreviations).values([
     { shortcut: "רג", normalizedShortcut: "רג", expansion: "רמת גן" },
@@ -138,6 +143,8 @@ test("bot replies match the recorded snapshot", { timeout: 120_000 }, async () =
     await db.insert(t.priceBotTargets).values([
       { adminId, kind: "contact", identifier: CUSTOMER, label: "לקוח" },
       { adminId, kind: "contact", identifier: "972521234567", label: "מנהל" },
+      { adminId, kind: "contact", identifier: "972504107826", label: "בעלים" },
+      { adminId, kind: "contact", identifier: "972531230000", label: "חבר צוות" },
       { adminId, kind: "group", identifier: GROUP, label: "קבוצת לקוחות" },
     ]);
   }
