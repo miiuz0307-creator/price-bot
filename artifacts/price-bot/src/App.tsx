@@ -108,7 +108,7 @@ const navItems = [
 function AppShell({ children, admin, onLogout }: { children: ReactNode; admin: Admin; onLogout: () => void }) {
   const [location] = useLocation();
   const [open, setOpen] = useState(false);
-  const visibleNav = navItems.filter((item) => !('permission' in item) || admin.role === 'owner' || admin.permissions.includes(item.permission));
+  const visibleNav = navItems.filter((item) => !item.permission || admin.role === 'owner' || admin.permissions.includes(item.permission));
   const activeItem = visibleNav.find((item) => item.href === location) || visibleNav[0];
   return (
     <div className="app-noise min-h-[100dvh] bg-background text-foreground">
