@@ -31,13 +31,19 @@ test("one-time import from an old (Replit-era) database", { timeout: 60_000 }, a
 
   const target = createPool(urlFor("import_dst"));
   await runMigrations(target);
+  // The new server already started once: the owner exists (no code) plus another user, so ids differ.
+  await target.query(`INSERT INTO price_bot_admins (phone, label, role) VALUES ('0599999999', 'משתמש חדש', 'admin'), ('0504107826', 'מיכאל', 'owner')`);
   const result = await importFromDatabase(urlFor("import_src").replace(/(\?|$)/u, "?sslmode=disable$1"), target);
   assert.equal(result.imported, true);
 
-  const owner = (await target.query("SELECT * FROM price_bot_admins WHERE id = 1")).rows[0];
+  const owner = (await target.query("SELECT * FROM price_bot_admins WHERE phone = '0504107826'")).rows[0];
+  assert.equal(owner.id, 2, "existing owner row is reused, matched by phone");
   assert.equal(owner.code_hash, "scrypt$salt$hash", "owner keeps their personal code");
-  assert.deepEqual((await target.query("SELECT permissions FROM price_bot_admins WHERE id = 2")).rows[0].permissions,
-    ["catalog.edit", "targets.manage", "lookups.manage", "surge.manage", "whatsapp.manage"]);
+  const yitzhak = (await target.query("SELECT * FROM price_bot_admins WHERE phone = '0521234567'")).rows[0];
+  assert.deepEqual(yitzhak.permissions, ["catalog.edit", "targets.manage", "lookups.manage", "surge.manage", "whatsapp.manage"]);
+  const groupTarget = (await target.query("SELECT admin_id FROM price_bot_targets WHERE kind = 'group'")).rows[0];
+  assert.equal(groupTarget.admin_id, yitzhak.id, "references follow the administrator, not the old id");
+  assert.equal((await target.query("SELECT admin_id FROM price_bot_surge_settings")).rows[0].admin_id, owner.id);
   const product = (await target.query("SELECT * FROM price_bot_products WHERE id = 5")).rows[0];
   assert.deepEqual(product.price_matrix, [160, 300, 190, 360, 210, 400, 230, 440]);
   assert.deepEqual(product.aliases, ["בב ים"]);
