@@ -1,88 +1,109 @@
 name: CI
 
-# Runs on every push and pull request: install, typecheck, tests (including bot
-# replies against a real PostgreSQL), production build, and a Docker image build.
+# Every push and pull request:
+#   1. generate  – regenerates API client/validators from openapi.yaml and runs the
+#                  bot-reply golden-master test against a real PostgreSQL.
+#                  On work branches, generated files/snapshots are committed back;
+#                  on main they must already be up to date.
+#   2. check     – typecheck, unit tests, production builds.
+#   3. docker    – builds the deployable image.
 # A red ✗ on GitHub means "do not deploy this version".
 on:
   push:
   pull_request:
-  workflow_dispatch:
-    inputs:
-      update_golden:
-        description: "Re-record golden bot replies (only after an intentional reply change)"
-        type: boolean
-        default: false
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: write
-
-defaults:
-  run:
-    shell: bash -o pipefail {0}
+env:
+  NODE_VERSION: 24
+  PNPM_VERSION: 10.28.0
 
 jobs:
-  check:
+  generate:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
+    permissions:
+      contents: write
     services:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: pricebot_test
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pricebot
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U test" --health-interval 5s --health-timeout 5s --health-retries 10
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      DATABASE_URL: postgresql://test:test@localhost:5432/pricebot_test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/pricebot
       SESSION_SECRET: ci-only-secret-not-used-in-production
-      LOG_LEVEL: warn
+      NODE_ENV: production
+      TZ: Asia/Jerusalem
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref }}
       - uses: pnpm/action-setup@v4
         with:
-          version: 10.28.0
+          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-      - run: pnpm install --frozen-lockfile 2>&1 | tee "$RUNNER_TEMP/step.log"
-      - name: Typecheck (all packages)
-        run: pnpm run typecheck 2>&1 | tee "$RUNNER_TEMP/step.log"
-      - name: Unit tests
-        run: pnpm --filter @workspace/api-server run test 2>&1 | tee "$RUNNER_TEMP/step.log"
-      - name: Create test database schema
-        run: pnpm --filter @workspace/db run push-force 2>&1 | tee "$RUNNER_TEMP/step.log"
-      - name: Bot reply tests (golden)
-        run: pnpm --filter @workspace/api-server run test:integration 2>&1 | tee "$RUNNER_TEMP/step.log"
-        env:
-          UPDATE_GOLDEN: ${{ inputs.update_golden && '1' || '' }}
-      - name: Save newly recorded golden replies
-        if: github.event_name != 'pull_request'
+      - run: pnpm install --frozen-lockfile
+      - name: Regenerate API client and validators
+        run: scripts/ci/run.sh "Codegen" pnpm --filter @workspace/api-spec exec orval --config ./orval.config.ts
+      - name: Create database schema
+        run: scripts/ci/run.sh "Database schema" pnpm --filter @workspace/db run setup-test-db
+      - name: Bot reply golden master
+        run: scripts/ci/run.sh "Bot replies" pnpm --filter @workspace/api-server run test:integration
+      - name: Commit generated files (work branches)
+        if: github.event_name == 'push' && github.ref != 'refs/heads/main'
         run: |
-          if [ -n "$(git status --porcelain artifacts/api-server/src/tests/golden)" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add artifacts/api-server/src/tests/golden
-            git commit -m "test: record golden bot replies"
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "ci-bot"
+            git config user.email "ci-bot@users.noreply.github.com"
+            git add -A
+            git commit -m "chore: regenerate API client / snapshots [ci]"
             git push
-            echo "::notice title=Golden replies recorded::Committed artifacts/api-server/src/tests/golden"
+            echo "::notice title=Generated files committed::$(git log -1 --stat --format='%h' | tr '\n' ' ')"
           fi
+      - name: Generated files must be committed (main / PRs)
+        if: github.event_name != 'push' || github.ref == 'refs/heads/main'
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error title=Stale generated files::$(git status --porcelain | tr '\n' ' ')"
+            exit 1
+          fi
+
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: generate
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck (all packages)
+        run: scripts/ci/run.sh "Typecheck" pnpm run typecheck
+      - name: Unit tests
+        run: scripts/ci/run.sh "Unit tests" pnpm --filter @workspace/api-server run test
       - name: Build API server
-        run: pnpm --filter @workspace/api-server run build 2>&1 | tee "$RUNNER_TEMP/step.log"
+        run: scripts/ci/run.sh "Build API" pnpm --filter @workspace/api-server run build
       - name: Build web app
-        run: pnpm --filter @workspace/price-bot run build 2>&1 | tee "$RUNNER_TEMP/step.log"
+        run: scripts/ci/run.sh "Build web" pnpm --filter @workspace/price-bot run build
         env:
           NODE_ENV: production
           BASE_PATH: /
-      - name: Report failure
-        if: failure()
-        run: .github/scripts/report-failure.sh
 
   docker:
     runs-on: ubuntu-latest
@@ -90,6 +111,8 @@ jobs:
     needs: check
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref }}
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
         with:
