@@ -51,15 +51,15 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - run: pnpm install --frozen-lockfile 2>&1 | tee -a "$RUNNER_TEMP/ci.log"
+      - run: pnpm install --frozen-lockfile 2>&1 | tee "$RUNNER_TEMP/step.log"
       - name: Typecheck (all packages)
-        run: pnpm run typecheck 2>&1 | tee -a "$RUNNER_TEMP/ci.log"
+        run: pnpm run typecheck 2>&1 | tee "$RUNNER_TEMP/step.log"
       - name: Unit tests
-        run: pnpm --filter @workspace/api-server run test 2>&1 | tee -a "$RUNNER_TEMP/ci.log"
+        run: pnpm --filter @workspace/api-server run test 2>&1 | tee "$RUNNER_TEMP/step.log"
       - name: Create test database schema
-        run: pnpm --filter @workspace/db run push-force 2>&1 | tee -a "$RUNNER_TEMP/ci.log"
+        run: pnpm --filter @workspace/db run push-force 2>&1 | tee "$RUNNER_TEMP/step.log"
       - name: Bot reply tests (golden)
-        run: pnpm --filter @workspace/api-server run test:integration 2>&1 | tee -a "$RUNNER_TEMP/ci.log"
+        run: pnpm --filter @workspace/api-server run test:integration 2>&1 | tee "$RUNNER_TEMP/step.log"
         env:
           UPDATE_GOLDEN: ${{ inputs.update_golden && '1' || '' }}
       - name: Save newly recorded golden replies
@@ -74,9 +74,9 @@ jobs:
             echo "::notice title=Golden replies recorded::Committed artifacts/api-server/src/tests/golden"
           fi
       - name: Build API server
-        run: pnpm --filter @workspace/api-server run build 2>&1 | tee -a "$RUNNER_TEMP/ci.log"
+        run: pnpm --filter @workspace/api-server run build 2>&1 | tee "$RUNNER_TEMP/step.log"
       - name: Build web app
-        run: pnpm --filter @workspace/price-bot run build 2>&1 | tee -a "$RUNNER_TEMP/ci.log"
+        run: pnpm --filter @workspace/price-bot run build 2>&1 | tee "$RUNNER_TEMP/step.log"
         env:
           NODE_ENV: production
           BASE_PATH: /
