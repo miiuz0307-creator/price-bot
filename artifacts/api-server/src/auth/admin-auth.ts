@@ -177,6 +177,7 @@ export async function sendSession(
     expiresAt: new Date(now.getTime() + sessionLifetimeMs),
   });
   await db.update(priceBotAdmins).set({ lastLoginAt: now, lastSeenAt: now }).where(eq(priceBotAdmins.id, admin.id));
+  logger.info({ adminId: admin.id, role: admin.role, workspaceId: workspaceId(admin), method, client: req.get(mobileClientHeader) === "mobile" ? "mobile" : "web" }, "Signed in");
   res.cookie(sessionCookieName, token, {
     httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production",
     maxAge: sessionLifetimeMs, path: "/",

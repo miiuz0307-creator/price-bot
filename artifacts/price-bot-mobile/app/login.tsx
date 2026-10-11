@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Keyboard, Pressable, TextInput, View } from 'react-native';
+import { BackHandler, Keyboard, Pressable, TextInput, View } from 'react-native';
 import { useMutation } from '@tanstack/react-query';
 import { loginWithPin, requestLoginCode, verifyLoginCode } from '@workspace/api-client-react';
 import { BrandMark } from '@/components/LockScreen';
@@ -30,6 +30,18 @@ export default function LoginScreen() {
     return () => clearTimeout(timer);
   }, [resendIn]);
 
+  // Android back button: return to the first step instead of leaving the app.
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (step === 'identify') return false;
+      setError(null);
+      setStep('identify');
+      return true;
+    });
+    return () => subscription.remove();
+  }, [step]);
+
+  const isEmail = identifier.includes('@');
   const remember = () => prefs.set(keys.identifier, identifier.trim());
 
   const sendCode = useMutation({
@@ -78,7 +90,11 @@ export default function LoginScreen() {
             </Txt>
             <Txt variant="body" color={c.muted} style={{ lineHeight: 24 }}>
               {step === 'identify' && 'הזינו את מספר הטלפון או האימייל שלכם. נשלח אליכם קוד חד־פעמי ב־WhatsApp.'}
-              {step === 'code' && `קוד בן 6 ספרות נשלח אליך עכשיו ב־WhatsApp${destination ? ` למספר שמסתיים ב־${destination.replace(/\D/g, '').slice(-4)}` : ''}.`}
+              {step === 'code' && (destination
+                ? `קוד בן 6 ספרות נשלח אליך עכשיו ב־WhatsApp למספר שמסתיים ב־${destination.replace(/\D/g, '').slice(-4)}.`
+                : isEmail
+                  ? 'אם האימייל שמור בחשבון, נשלח קוד ב־WhatsApp למספר הטלפון של החשבון. לא הגיע קוד? חזרו והיכנסו עם מספר הטלפון.'
+                  : 'אם המספר רשום במערכת, נשלח אליו קוד ב־WhatsApp. לא הגיע קוד תוך דקה? בדקו את המספר או היכנסו עם קוד אישי.')}
               {step === 'pin' && 'הקוד האישי (4–8 ספרות) שקיבלתם מבעל המערכת.'}
             </Txt>
           </View>
@@ -90,11 +106,11 @@ export default function LoginScreen() {
               label="טלפון או אימייל"
               value={identifier}
               onChangeText={(text) => { setIdentifier(text); setError(null); }}
-              placeholder="050-000-0000"
+              placeholder="050-000-0000 או name@mail.com"
               autoCapitalize="none"
               autoCorrect={false}
-              autoComplete="tel"
-              textContentType="telephoneNumber"
+              autoComplete="username"
+              textContentType="username"
               keyboardType="email-address"
               ltr
               returnKeyType={step === 'pin' ? 'next' : 'send'}

@@ -427,4 +427,11 @@ export const priceBotReady: Promise<void> = (async () => {
   }
   const admins = await db.select().from(priceBotAdmins).where(and(eq(priceBotAdmins.active, true), isNull(priceBotAdmins.whatsappOwnerId)));
   await Promise.all(admins.map((admin) => whatsappWeb.getStatus(admin.id, admin.id === owner.id)));
+  // Support overview (no phone numbers): which account owns which WhatsApp connection.
+  const everyone = await db.select().from(priceBotAdmins);
+  logger.info({
+    ownerId: owner.id,
+    accounts: everyone.map((admin) => ({ id: admin.id, label: admin.label, role: admin.role, active: admin.active, sharesWhatsAppOf: admin.whatsappOwnerId, hasEmail: Boolean(admin.email) })),
+  }, "Accounts overview");
+  setTimeout(() => logger.info({ connectedWorkspaces: whatsappWeb.connectedAdminIds() }, "Connected WhatsApp workspaces"), 30_000).unref();
 })().catch((error) => logger.error({ err: error }, "Unable to initialize administrator WhatsApp sessions"));

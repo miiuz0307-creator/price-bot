@@ -68,7 +68,7 @@ function TabBar({ state, navigation }: BottomTabBarProps) {
 export default function TabLayout() {
   const { c } = useTheme();
   return (
-    <Tabs tabBar={(props) => <TabBar {...props} />} screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: c.bg }, animation: 'shift' }}>
+    <Tabs backBehavior="history" tabBar={(props) => <TabBar {...props} />} screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: c.bg }, animation: 'shift' }}>
       <Tabs.Screen name="index" />
       <Tabs.Screen name="prices" />
       <Tabs.Screen name="requests" />

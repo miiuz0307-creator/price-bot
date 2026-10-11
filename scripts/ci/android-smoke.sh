@@ -38,7 +38,7 @@ if [ "$started" = 1 ]; then
     shot pin-filled 1
     adb shell input keyevent 66; sleep 2
     tap_text "כניסה"
-    wait_text "מסלולים במחירון" 25 && signed=1
+    { wait_text "מסלולים במחירון" 25 || { sleep 3; ui | grep -qF "מסלולים במחירון"; }; } && signed=1
     [ "$signed" = 1 ] || { shot signin-failed 1; echo "::warning title=Sign-in screen::$(ui | grep -o 'text="[^"]*"' | grep -v 'text=""' | head -30 | tr '\n' ' ')"; }
   fi
 fi
@@ -52,6 +52,13 @@ if [ "$signed" = 1 ]; then
     shot "$name" 4
     alive || break
   done
+  # Android back button must go back inside the app, not close it.
+  adb shell am start -W -a android.intent.action.VIEW -d "pricebot://prices" $pkg >/dev/null 2>&1; sleep 3
+  adb shell am start -W -a android.intent.action.VIEW -d "pricebot://product/$pid" $pkg >/dev/null 2>&1; sleep 3
+  adb shell input keyevent 4; sleep 3
+  focus=$(adb shell dumpsys window | grep -m1 mCurrentFocus)
+  if echo "$focus" | grep -q $pkg; then echo "::notice title=Back button::stays in the app ($focus)"; else echo "::warning title=Back button::app left the foreground after Back: $focus"; fi
+  shot after-back 1
 else
   echo "::warning title=Android smoke test::could not sign in on the emulator (screens not captured)"
 fi
