@@ -252,6 +252,31 @@ test("users, permissions, sessions and sign-in", { timeout: 120_000 }, async (t)
     assert.equal((await mobile("GET", "/auth/session", undefined, token)).status, 401);
   });
 
+  await t.test("live sync: open screens hear about changes immediately", async () => {
+    const controller = new AbortController();
+    const stream = await fetch(`${base}/live`, { headers: { cookie: ownerCookie }, signal: controller.signal });
+    assert.equal(stream.status, 200);
+    assert.match(stream.headers.get("content-type") ?? "", /text\/event-stream/);
+    const reader = stream.body!.getReader();
+    const decoder = new TextDecoder();
+    let received = "";
+    const waitFor = async (pattern: RegExp) => {
+      const deadline = Date.now() + 5000;
+      while (!pattern.test(received) && Date.now() < deadline) {
+        const chunk = await Promise.race([reader.read(), new Promise<null>((resolve) => setTimeout(() => resolve(null), 500))]);
+        if (chunk && !chunk.done) received += decoder.decode(chunk.value, { stream: true });
+      }
+      return pattern.test(received);
+    };
+    assert.ok(await waitFor(/event: ready/), "stream opens");
+    const created = await call("POST", "/abbreviations", { shortcut: "בדק", expansion: "בדיקת סנכרון" }, ownerCookie);
+    assert.equal(created.status, 201, JSON.stringify(created.json));
+    assert.ok(await waitFor(/event: invalidate\ndata: \{"topics":\["catalog"\]\}/), `got: ${received}`);
+    await call("DELETE", `/abbreviations/${created.json.id}`, undefined, ownerCookie);
+    controller.abort();
+    assert.equal((await fetch(`${base}/live`)).status, 401, "requires sign-in");
+  });
+
   await t.test("logout ends the session", async () => {
     assert.equal((await call("POST", "/auth/logout", undefined, ownerCookie)).status, 204);
     assert.equal((await call("GET", "/auth/session", undefined, ownerCookie)).status, 401);

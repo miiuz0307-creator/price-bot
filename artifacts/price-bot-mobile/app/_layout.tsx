@@ -19,6 +19,7 @@ import { LockScreen, OfflineScreen } from '@/components/LockScreen';
 import { handleApiError, SessionProvider, useSession } from '@/lib/session';
 import { ThemeProvider, useTheme } from '@/lib/theme';
 import { registerForPush } from '@/lib/push';
+import { useLiveSync } from '@/lib/live';
 
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -53,6 +54,7 @@ function AppNavigator() {
   const { c } = useTheme();
   const { status } = useSession();
   const signedIn = status === 'signedIn';
+  useLiveSync(signedIn);
 
   useEffect(() => {
     if (status !== 'loading') void SplashScreen.hideAsync().catch(() => undefined);

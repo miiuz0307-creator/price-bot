@@ -91,6 +91,7 @@ import SurgePage from '@/pages/surge';
 import UsersPage from '@/pages/users';
 import ActivityPage from '@/pages/activity';
 import { SessionProvider, useCan, useSessionAdmin } from '@/lib/session';
+import { LiveSync } from '@/lib/live';
 import { useTheme } from '@/lib/theme';
 import { Link, Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import './index.css';
@@ -661,7 +662,7 @@ function Router() {
   if (!session.data) return <LoginScreen bootstrap={Boolean(status.data?.ownerSetupRequired)} onSuccess={reset} />;
   const onLogout = () => logout.mutate(undefined, { onSettled: () => { client.clear(); void session.refetch(); } });
   const admin = session.data.admin;
-  return <ErrorBoundary><SessionProvider admin={admin}><AppShell admin={admin} onLogout={onLogout}><Switch><Route path="/" component={Dashboard} /><Route path="/products" component={ProductsPage} /><Route path="/abbreviations" component={AbbreviationsPage} /><Route path="/surge" component={SurgePage} /><Route path="/targets" component={TargetsPage} /><Route path="/admins" component={UsersPage} /><Route path="/activity" component={ActivityPage} /><Route path="/settings" component={SettingsPage} /><Route component={NotFound} /></Switch></AppShell></SessionProvider></ErrorBoundary>;
+  return <ErrorBoundary><SessionProvider admin={admin}><LiveSync /><AppShell admin={admin} onLogout={onLogout}><Switch><Route path="/" component={Dashboard} /><Route path="/products" component={ProductsPage} /><Route path="/abbreviations" component={AbbreviationsPage} /><Route path="/surge" component={SurgePage} /><Route path="/targets" component={TargetsPage} /><Route path="/admins" component={UsersPage} /><Route path="/activity" component={ActivityPage} /><Route path="/settings" component={SettingsPage} /><Route component={NotFound} /></Switch></AppShell></SessionProvider></ErrorBoundary>;
 }
 
 function App() {

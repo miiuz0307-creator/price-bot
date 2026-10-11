@@ -1,3 +1,4 @@
+import { publishChanges } from "./services/live";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { timingSafeEqual } from "node:crypto";
@@ -66,6 +67,7 @@ app.use(express.urlencoded({ extended: true }));
 // HTTP client, so a screen can never show an old "not connected" after a restart.
 app.set("etag", false);
 app.use("/api", (_req, res, next) => { res.set("Cache-Control", "no-store"); next(); });
+app.use("/api", publishChanges);
 app.use("/api", router);
 
 // Outside Replit the same server also serves the built web app, so one Railway

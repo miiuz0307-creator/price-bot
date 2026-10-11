@@ -8,6 +8,7 @@ import lookupsRouter from "./lookups";
 import dashboardRouter from "./dashboard";
 import surgeRouter from "./surge";
 import pushRouter from "./push";
+import { liveStream } from "../services/live";
 import messageTestRouter from "./message-test";
 
 // Starts the WhatsApp bot (message handler + startup tasks) exactly as before the split.
@@ -20,6 +21,8 @@ router.use(authRouter);
 // Everything below requires a signed-in administrator, including the dashboard's
 // message-test endpoint (it used to be public and ran as the owner).
 router.use(requireAdmin);
+// Live sync stream (see services/live.ts).
+router.get("/live", liveStream);
 router.use(catalogRouter);
 router.use(teamRouter);
 router.use(targetsRouter);

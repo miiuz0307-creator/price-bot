@@ -29,6 +29,7 @@ const SessionContext = createContext<SessionValue | null>(null);
 
 let currentToken: string | null = null;
 setAuthTokenGetter(() => currentToken);
+export const currentSessionToken = () => currentToken;
 
 /** Lets the query client sign the user out when the server says the session ended. */
 let unauthorizedHandler: (() => void) | null = null;

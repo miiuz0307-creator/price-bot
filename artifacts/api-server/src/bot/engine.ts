@@ -77,6 +77,7 @@ import { drivingDistanceKm, estimateReferenceRoute, estimatedPriceMatrix, estima
 import { formatBillingCalculation, parseBillingAmount } from "../services/billing-calculator";
 import { logger } from "../lib/logger";
 import { notifyWorkspace } from "../services/push";
+import { publish } from "../services/live";
 import { formatSurgePrice, isSurgeAboveCatalog, isSurgeActiveAt, matchSurgeProduct, matchesSurgeDirection, parseSurgeQuotes, sortSurgeOffers, surgeDirectionKey, surgeEffectiveExpiry, surgeLifetimeMs } from "../services/surge-pricing";
 
 import { sessionCookieName, sessionLifetimeMs, scrypt, hashCode, verifyCode, validCode, loginKeys, loginRetryAfterSeconds, recordLoginFailure, rejectIfLoginBlocked, loginFailures, sendSession, endCurrentSession, revokeAllSessions, requireAdmin, requireOwner, requirePermission, hasPermission, effectivePermissions, isPermission, allPermissions, workspaceId, type Permission, type AuthAdmin } from "../auth/admin-auth";
@@ -161,6 +162,7 @@ export async function captureSurgeQuote({ adminId, chatId, body, isGroup, sentAt
     }
     return true;
   });
+  if (recorded) publish(["surge"]);
   const surges = recorded ? matchedQuotes.filter(({ quote, product }) => isSurgeAboveCatalog(quote, product)) : [];
   if (surges.length) {
     const { quote } = surges[0];
@@ -321,6 +323,7 @@ export async function processPriceBotMessage({
     }
   } else responseText = "לבדיקת מחיר שלח/י: מ [מסלול]";
   await db.insert(priceBotLookups).values({ adminId, from, body, matched, estimate });
+  publish(["requests", "catalog"]);
   if (target && notifyAdmins && !matched && billingAmount === null && /^מ\s*\S/u.test(message)) {
     void notifyWorkspace(adminId, "lookups", {
       title: "בקשת מחיר חדשה",
@@ -352,6 +355,7 @@ whatsappWeb.onEvent((event) => {
     ...(event.detail ? { detail: event.detail } : {}), ...(event.phoneNumber ? { phoneNumber: event.phoneNumber } : {}),
   }, null);
   pushWhatsAppEvent(event.adminId, event.type);
+  publish(["whatsapp"]);
 });
 
 // Phone alerts for the bot's WhatsApp. Short reconnects (network blips) stay silent:
