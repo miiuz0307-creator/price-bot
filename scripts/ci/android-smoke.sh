@@ -15,12 +15,17 @@ adb logcat -c
 ui() { adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb shell cat /sdcard/ui.xml 2>/dev/null | tr '>' '\n'; }
 center() { sed -E 's/.*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]".*/\1 \2 \3 \4/' | awk '{print int(($1+$3)/2), int(($2+$4)/2)}'; }
 tap_text() { local xy; xy=$(ui | grep -F "text=\"$1\"" | head -1 | center); [ -n "$xy" ] && adb shell input tap $xy; }
-wait_text() { for _ in $(seq 1 "${2:-30}"); do ui | grep -qF "$1" && return 0; sleep 2; done; return 1; }
+# The emulator itself sometimes shows "System UI isn't responding" while booting: press "Wait".
+dismiss_system_dialog() { local dump="$1" xy; xy=$(echo "$dump" | grep -E 'text="(Wait|המתן)"' | head -1 | center); [ -n "$xy" ] && adb shell input tap $xy; }
+wait_text() { local dump; for _ in $(seq 1 "${2:-30}"); do dump=$(ui); echo "$dump" | grep -qF "$1" && return 0; dismiss_system_dialog "$dump"; sleep 2; done; return 1; }
 shot() { sleep "${2:-3}"; adb exec-out screencap -p > "$prefix-$1.png"; }
 alive() { [ -n "$(adb shell pidof $pkg)" ]; }
 
 adb shell monkey -p $pkg -c android.intent.category.LAUNCHER 1 >/dev/null
 started=0; wait_text "כניסה" 60 && started=1
+if [ "$started" != 1 ]; then  # second chance after a system dialog
+  adb shell monkey -p $pkg -c android.intent.category.LAUNCHER 1 >/dev/null; wait_text "כניסה" 30 && started=1
+fi
 shot login 2
 if [ "$started" != 1 ]; then
   echo "::warning title=UI dump::$(adb shell uiautomator dump /sdcard/ui.xml 2>&1 | head -3 | tr '\n' ' ') $(adb shell cat /sdcard/ui.xml 2>/dev/null | head -c 1500 | sed -e 's/%/%25/g')"
