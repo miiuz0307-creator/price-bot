@@ -301,6 +301,15 @@ jobs:
             echo "::error title=Gradle build failed::$(head -c 6000 $RUNNER_TEMP/gradle-errors.txt | sed -e 's/%/%25/g' -e 's/\x1b\[[0-9;]*m//g' | awk 'BEGIN{ORS="%0A"} {print}')"
             exit 1
           }
+      - name: Save build log for diagnosis (failure only)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p $RUNNER_TEMP/logrepo && cd $RUNNER_TEMP/logrepo && git init -q
+          for f in gradle.log gradle-x86.log ota-export.log server.log; do [ -f $RUNNER_TEMP/$f ] && tail -n 3000 $RUNNER_TEMP/$f > $f; done
+          git add -A && git -c user.name=ci-bot -c user.email=ci-bot@users.noreply.github.com commit -qm "logs ${{ github.run_id }}"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}" HEAD:refs/heads/ci-logs
       - name: Keep the phone APK
         run: cp artifacts/price-bot-mobile/android/app/build/outputs/apk/release/app-release.apk $RUNNER_TEMP/phone.apk
       # Smoke test on an Android emulator (x86_64 build of the same code): the app must
