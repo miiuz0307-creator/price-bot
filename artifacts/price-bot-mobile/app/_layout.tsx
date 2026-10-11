@@ -28,7 +28,10 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 15_000,
-      retry: (count, error) => (error as { status?: number })?.status === undefined ? count < 2 : (error as { status: number }).status >= 500 && count < 2,
+      retry: (count, error) => {
+        const status = (error as unknown as { status?: number })?.status;
+        return count < 2 && (status === undefined || status >= 500);
+      },
     },
   },
 });
