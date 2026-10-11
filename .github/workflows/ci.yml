@@ -66,6 +66,8 @@ jobs:
         run: |
           if [ "$UPDATE_LOCKFILE" = "1" ]; then
             scripts/ci/run.sh "pnpm install (lockfile update)" pnpm install --no-frozen-lockfile
+            node scripts/ci/align-expo.mjs
+            git diff --quiet artifacts/price-bot-mobile/package.json || scripts/ci/run.sh "pnpm install (aligned Expo versions)" pnpm install --no-frozen-lockfile
           else
             scripts/ci/run.sh "pnpm install" pnpm install --frozen-lockfile
           fi
@@ -312,6 +314,8 @@ jobs:
           PORT: 8080
           OWNER_INITIAL_CODE: "2468"
           TZ: Asia/Jerusalem
+          APP_UPDATE_TOKEN: ci-only-update-token-0123456789abcdef
+          APP_UPDATES_DIR: ${{ runner.temp }}/app-updates
         run: |
           pnpm --filter @workspace/api-server run build > $RUNNER_TEMP/api-build.log 2>&1 || { tail -n 40 $RUNNER_TEMP/api-build.log; exit 1; }
           WHATSAPP_AUTH_DIR=$RUNNER_TEMP/wa nohup node artifacts/api-server/dist/index.mjs > $RUNNER_TEMP/server.log 2>&1 &
@@ -322,14 +326,24 @@ jobs:
         env:
           EXPO_PUBLIC_API_URL: http://localhost:8080
         run: |
-          # Test build only: allow plain http to the local test server.
+          # Test build only: allow plain http to the local test server, and take
+          # online updates from it.
           sed -i 's/<application /<application android:usesCleartextTraffic="true" /' app/src/main/AndroidManifest.xml
+          sed -i 's#https://price-bot-production-2674.up.railway.app/api/app-updates/manifest#http://localhost:8080/api/app-updates/manifest#' app/src/main/AndroidManifest.xml
+          grep -q "localhost:8080/api/app-updates" app/src/main/AndroidManifest.xml || { echo "::error title=OTA test::update URL not found in AndroidManifest"; exit 1; }
           ./gradlew createBundleReleaseJsAndAssets --rerun assembleRelease --no-daemon -PreactNativeArchitectures=x86_64 \
             -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/artifacts/price-bot-mobile/credentials/android.keystore \
             -Pandroid.injected.signing.store.password=pricebot-sideload \
             -Pandroid.injected.signing.key.alias=pricebot \
             -Pandroid.injected.signing.key.password=pricebot-sideload > $RUNNER_TEMP/gradle-x86.log 2>&1 || { tail -n 60 $RUNNER_TEMP/gradle-x86.log; exit 1; }
           cp app/build/outputs/apk/release/app-release.apk $RUNNER_TEMP/emulator.apk
+      - name: Export an online update for the emulator test
+        working-directory: artifacts/price-bot-mobile
+        env:
+          EXPO_PUBLIC_API_URL: http://localhost:8080
+        run: |
+          pnpm exec expo export --platform android --output-dir $RUNNER_TEMP/ota-test > $RUNNER_TEMP/ota-export.log 2>&1 || { tail -n 40 $RUNNER_TEMP/ota-export.log; exit 1; }
+          pnpm exec expo config --type public --json > $RUNNER_TEMP/ota-config.json
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -343,7 +357,7 @@ jobs:
           disable-animations: true
           profile: pixel_6
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: bash scripts/ci/android-smoke.sh $RUNNER_TEMP/emulator.apk docs/screenshots/app/android
+          script: OTA_DIR=$RUNNER_TEMP/ota-test OTA_CONFIG=$RUNNER_TEMP/ota-config.json APP_UPDATE_TOKEN=ci-only-update-token-0123456789abcdef bash scripts/ci/android-smoke.sh $RUNNER_TEMP/emulator.apk docs/screenshots/app/android
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -372,3 +386,37 @@ jobs:
           git pull --rebase --autostash origin "${GITHUB_REF#refs/heads/}" || true
           git add docs/screenshots/app
           git diff --cached --quiet || { git commit -m "docs: Android emulator screenshots [ci]"; git push; }
+
+  ota:
+    # Online update of the phone app: every change on main that passes the checks is
+    # published to the server; installed apps pick it up on their next launch.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: check
+    permissions:
+      contents: read
+      id-token: write   # GitHub-signed proof that this is the main branch of this repository
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: scripts/ci/run.sh "pnpm install (hoisted)" pnpm install --frozen-lockfile --config.node-linker=hoisted
+      - name: Export and publish the update
+        env:
+          MESSAGE: ${{ github.sha }}
+        run: |
+          export APP_UPDATE_TOKEN=$(curl -sf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=price-bot-updates" | jq -r .value)
+          [ -n "$APP_UPDATE_TOKEN" ] && [ "$APP_UPDATE_TOKEN" != null ] || { echo "::error title=Online update::could not get a GitHub OIDC token"; exit 1; }
+          cd artifacts/price-bot-mobile
+          pnpm exec expo export --platform android --output-dir $RUNNER_TEMP/ota > $RUNNER_TEMP/ota-export.log 2>&1 || { tail -n 40 $RUNNER_TEMP/ota-export.log; exit 1; }
+          pnpm exec expo config --type public --json > $RUNNER_TEMP/ota-config.json
+          url=$(node -p "require('./app.json').expo.updates.url.replace('/api/app-updates/manifest','')")
+          cd $GITHUB_WORKSPACE
+          UPDATE_URL=$url scripts/ci/run.sh "Publish online update" node scripts/ci/publish-update.mjs $RUNNER_TEMP/ota $RUNNER_TEMP/ota-config.json
+          echo "::notice title=Online update published::installed apps update on their next launch"

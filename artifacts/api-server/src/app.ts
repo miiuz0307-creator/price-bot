@@ -1,4 +1,5 @@
 import { publishChanges } from "./services/live";
+import { appUpdatesRouter } from "./services/app-updates";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { timingSafeEqual } from "node:crypto";
@@ -36,6 +37,10 @@ app.use(
     },
   }),
 );
+// Over-the-air updates for the phone app (public manifest/assets; token-protected
+// publish). Mounted before the global JSON parser: a published update is large.
+app.use("/api/app-updates", appUpdatesRouter);
+
 // One-time data move from the old server: POST a JSON export with the secret
 // IMPORT_TOKEN (set in the hosting variables, removed afterwards). Mounted before
 // the global JSON parser because the export is larger than its 100 KB limit.

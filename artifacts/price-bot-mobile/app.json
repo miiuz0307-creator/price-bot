@@ -21,7 +21,10 @@
         "backgroundColor": "#1B3834"
       },
       "edgeToEdgeEnabled": true,
-      "permissions": ["android.permission.POST_NOTIFICATIONS", "android.permission.USE_BIOMETRIC"]
+      "permissions": [
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.USE_BIOMETRIC"
+      ]
     },
     "web": {
       "favicon": "./assets/images/icon.png",
@@ -36,9 +39,29 @@
       "expo-font",
       "expo-web-browser",
       "expo-secure-store",
-      ["expo-local-authentication", { "faceIDPermission": "כניסה מהירה למחירון עם Face ID" }],
-      ["expo-notifications", { "icon": "./assets/images/notification-icon.png", "color": "#3DDC97" }],
-      ["expo-splash-screen", { "image": "./assets/images/splash-icon.png", "imageWidth": 140, "backgroundColor": "#0A1311", "resizeMode": "contain" }]
+      "expo-updates",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "כניסה מהירה למחירון עם Face ID"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#3DDC97"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 140,
+          "backgroundColor": "#0A1311",
+          "resizeMode": "contain"
+        }
+      ]
     ],
     "extra": {
       "apiUrl": "https://price-bot-production-2674.up.railway.app"
@@ -46,6 +69,13 @@
     "experiments": {
       "typedRoutes": false,
       "reactCompiler": false
+    },
+    "runtimeVersion": "1",
+    "updates": {
+      "url": "https://price-bot-production-2674.up.railway.app/api/app-updates/manifest",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
     }
   }
 }

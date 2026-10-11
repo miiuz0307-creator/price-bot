@@ -12,6 +12,7 @@ import { apiUrl } from '@/lib/api';
 import { confirm } from '@/lib/confirm';
 import { displayPhone } from '@/lib/format';
 import { registerForPush, type PushState } from '@/lib/push';
+import { checkForUpdateNow, versionLabel } from '@/lib/updates';
 import { useWhatsApp } from '@/lib/queries';
 import { useSession } from '@/lib/session';
 import { useTheme, type ThemeMode } from '@/lib/theme';
@@ -27,6 +28,7 @@ export default function MoreScreen() {
   const toast = useToast();
   const { admin, can, signOut, biometric, setAdmin } = useSession();
   const [editingMe, setEditingMe] = useState(false);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
   const whatsapp = useWhatsApp();
   const targets = useListTargets();
   const admins = useListAdmins();
@@ -127,13 +129,30 @@ export default function MoreScreen() {
       </ListGroup>
 
       <Button
+        title="בדיקת עדכונים"
+        icon="download"
+        variant="secondary"
+        loading={checkingUpdate}
+        onPress={async () => {
+          setCheckingUpdate(true);
+          try {
+            const result = await checkForUpdateNow();
+            toast.show(result === 'latest' ? 'יש לך את הגרסה העדכנית' : result === 'unavailable' ? 'עדכונים זמינים באפליקציה שמותקנת בטלפון' : 'מעדכן…', 'info');
+          } catch {
+            toast.show('לא הצלחתי לבדוק עדכונים כרגע', 'error');
+          } finally {
+            setCheckingUpdate(false);
+          }
+        }}
+      />
+      <Button
         title="יציאה מהחשבון"
         icon="log-out"
         variant="ghost"
         onPress={async () => { if (await confirm('לצאת מהחשבון?', 'תצטרכו להתחבר שוב עם קוד מ־WhatsApp או קוד אישי.', 'יציאה')) void signOut(); }}
       />
       <Txt variant="caption" color={c.faint} center>
-        מחירון {Constants.expoConfig?.version ?? ''} · {apiUrl ? apiUrl.replace(/^https?:\/\//, '') : 'אותו שרת'}
+        מחירון {versionLabel(Constants.expoConfig?.version ?? '')} · {apiUrl ? apiUrl.replace(/^https?:\/\//, '') : 'אותו שרת'}
       </Txt>
     </Screen>
   );

@@ -68,8 +68,34 @@ else
   echo "::warning title=Android smoke test::could not sign in on the emulator (screens not captured)"
 fi
 
+# Online update: publish new code to the test server; after two launches the app must run it.
+ota=skipped
+if [ -n "${OTA_DIR:-}" ] && [ "$signed" = 1 ]; then
+  if UPDATE_URL=http://127.0.0.1:8080 node scripts/ci/publish-update.mjs "$OTA_DIR" "$OTA_CONFIG"; then
+    for round in 1 2; do
+      adb shell am force-stop $pkg; sleep 1
+      adb shell monkey -p $pkg -c android.intent.category.LAUNCHER 1 >/dev/null; sleep 20
+    done
+    adb shell am start -W -a android.intent.action.VIEW -d "pricebot://more" $pkg >/dev/null 2>&1; sleep 4
+    ota=missing
+    for _ in 1 2 3 4; do
+      if ui | grep -qF "· עדכון "; then ota=applied; break; fi
+      adb shell input swipe 540 1900 540 500 300; sleep 2
+    done
+    shot "ota-$ota" 1
+  else
+    ota=publish-failed
+  fi
+  if [ "$ota" = applied ]; then echo "::notice title=Online update::the app downloaded and runs the published update"
+  else echo "::error title=Online update::not applied ($ota)"; fi
+fi
+
 adb logcat -d > /tmp/logcat.txt
 crash=$(grep -E "FATAL EXCEPTION| E AndroidRuntime| E ReactNativeJS" /tmp/logcat.txt | head -n 40)
+if [ "$ota" = missing ] || [ "$ota" = publish-failed ]; then
+  echo "::warning title=Updates log::$(grep -iE "expo-updates|EXUpdates|updates" /tmp/logcat.txt | tail -n 30 | sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}')"
+  exit 1
+fi
 if [ -n "$crash" ] || ! alive || [ "$started" != 1 ]; then
   msg="started=$started signed_in=$signed alive=$(alive && echo yes || echo no)%0A$(echo "$crash" | sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}')"
   [ -z "$crash" ] && msg="$msg$(grep -E "$pkg|ReactNative|expo" /tmp/logcat.txt | tail -n 40 | sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}')"

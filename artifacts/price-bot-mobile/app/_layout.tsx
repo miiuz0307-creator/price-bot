@@ -20,6 +20,7 @@ import { handleApiError, SessionProvider, useSession } from '@/lib/session';
 import { ThemeProvider, useTheme } from '@/lib/theme';
 import { registerForPush } from '@/lib/push';
 import { useLiveSync } from '@/lib/live';
+import { useOnlineUpdates } from '@/lib/updates';
 
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -55,6 +56,7 @@ function AppNavigator() {
   const { status } = useSession();
   const signedIn = status === 'signedIn';
   useLiveSync(signedIn);
+  useOnlineUpdates();
 
   useEffect(() => {
     if (status !== 'loading') void SplashScreen.hideAsync().catch(() => undefined);
