@@ -62,6 +62,10 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Live data (connection status, counts): never cached by browsers or the phone app's
+// HTTP client, so a screen can never show an old "not connected" after a restart.
+app.set("etag", false);
+app.use("/api", (_req, res, next) => { res.set("Cache-Control", "no-store"); next(); });
 app.use("/api", router);
 
 // Outside Replit the same server also serves the built web app, so one Railway
