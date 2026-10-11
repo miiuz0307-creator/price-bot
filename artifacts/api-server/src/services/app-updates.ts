@@ -1,4 +1,4 @@
-import { createHash, createPublicKey, createVerify, randomUUID, timingSafeEqual, type JsonWebKey } from "node:crypto";
+import { createHash, createPublicKey, createVerify, randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -76,16 +76,17 @@ function sendMultipart(res: Response, name: "manifest" | "directive", json: unkn
  * Who may publish: GitHub Actions of this repository's main branch (GitHub's
  * signed OIDC token — no shared secret to manage), or APP_UPDATE_TOKEN if set.
  */
+type Jwk = Record<string, unknown> & { kid?: string };
 const oidcIssuer = "https://token.actions.githubusercontent.com";
 export const updateAudience = "price-bot-updates";
-let jwksCache: { at: number; keys: JsonWebKey[] } | null = null;
+let jwksCache: { at: number; keys: Jwk[] } | null = null;
 
 async function githubKeys(force = false) {
   if (!force && jwksCache && Date.now() - jwksCache.at < 3_600_000) return jwksCache.keys;
   const url = process.env.APP_UPDATE_JWKS_URL ?? `${oidcIssuer}/.well-known/jwks`;
   const response = await fetch(url, { signal: AbortSignal.timeout(10_000) });
   if (!response.ok) throw new Error(`JWKS ${response.status}`);
-  const { keys } = await response.json() as { keys: JsonWebKey[] };
+  const { keys } = await response.json() as { keys: Jwk[] };
   jwksCache = { at: Date.now(), keys };
   return keys;
 }
@@ -98,7 +99,7 @@ async function githubActionsOk(token: string) {
   let key = (await githubKeys()).find((item) => (item as { kid?: string }).kid === header.kid);
   if (!key) key = (await githubKeys(true)).find((item) => (item as { kid?: string }).kid === header.kid);
   if (!key) return false;
-  const valid = createVerify("RSA-SHA256").update(`${head}.${payload}`).verify(createPublicKey({ key, format: "jwk" }), Buffer.from(signature, "base64url"));
+  const valid = createVerify("RSA-SHA256").update(`${head}.${payload}`).verify(createPublicKey({ key: key as never, format: "jwk" }), Buffer.from(signature, "base64url"));
   if (!valid) return false;
   const claims = JSON.parse(Buffer.from(payload, "base64url").toString()) as Record<string, unknown>;
   const now = Date.now() / 1000;
