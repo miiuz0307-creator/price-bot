@@ -88,6 +88,7 @@ declare global {
   namespace Express {
     interface Request {
       authAdmin?: AuthAdmin;
+      authSessionId?: number;
     }
   }
 }
@@ -180,12 +181,32 @@ export async function sendSession(
     httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production",
     maxAge: sessionLifetimeMs, path: "/",
   });
+  return token;
+}
+
+/** Header the mobile app sends on sign-in; it then keeps the token in secure storage. */
+export const mobileClientHeader = "x-price-bot-client";
+
+/**
+ * The phone app cannot rely on cookies, so its sign-in responses also carry the
+ * session token (same session row, same revocation). Browsers never get it.
+ */
+export function mobileSessionToken(req: import("express").Request, token: string) {
+  return req.get(mobileClientHeader) === "mobile" ? { token } : {};
+}
+
+/** Session token from the cookie (web) or an `Authorization: Bearer` header (mobile app). */
+export function requestSessionToken(req: import("express").Request): string | null {
+  const cookie = req.cookies?.[sessionCookieName];
+  if (typeof cookie === "string" && cookie) return cookie;
+  const match = /^Bearer\s+([A-Za-z0-9_-]{20,200})$/u.exec(req.get("authorization") ?? "");
+  return match ? match[1] : null;
 }
 
 /** Ends the session behind the current request's cookie. */
 export async function endCurrentSession(req: import("express").Request, res: import("express").Response) {
-  const token = req.cookies?.[sessionCookieName];
-  if (typeof token === "string" && token) {
+  const token = requestSessionToken(req);
+  if (token) {
     await db.update(priceBotSessions).set({ revokedAt: new Date() }).where(eq(priceBotSessions.tokenHash, tokenHash(token)));
   }
   res.clearCookie(sessionCookieName, { path: "/" });
@@ -201,8 +222,8 @@ const touchIntervalMs = 5 * 60_000;
 
 export const requireAdmin: RequestHandler = async (req, res, next) => {
   try {
-    const token = req.cookies?.[sessionCookieName];
-    if (typeof token !== "string" || !token) {
+    const token = requestSessionToken(req);
+    if (!token) {
       res.status(401).json({ error: "נדרשת התחברות" });
       return;
     }
@@ -223,6 +244,7 @@ export const requireAdmin: RequestHandler = async (req, res, next) => {
       ]).catch(() => undefined);
     }
     req.authAdmin = row.admin;
+    req.authSessionId = row.session.id;
     next();
   } catch (error) {
     next(error);

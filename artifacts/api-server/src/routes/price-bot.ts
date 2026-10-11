@@ -7,6 +7,7 @@ import targetsRouter from "./targets";
 import lookupsRouter from "./lookups";
 import dashboardRouter from "./dashboard";
 import surgeRouter from "./surge";
+import pushRouter from "./push";
 import messageTestRouter from "./message-test";
 
 // Starts the WhatsApp bot (message handler + startup tasks) exactly as before the split.
@@ -26,5 +27,6 @@ router.use(lookupsRouter);
 router.use(dashboardRouter);
 router.use(surgeRouter);
 router.use(messageTestRouter);
+router.use(pushRouter);
 
 export default router;

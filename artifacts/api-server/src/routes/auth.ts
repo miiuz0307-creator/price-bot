@@ -82,6 +82,7 @@ import { logger } from "../lib/logger";
 import { formatSurgePrice, isSurgeAboveCatalog, isSurgeActiveAt, matchSurgeProduct, matchesSurgeDirection, parseSurgeQuotes, sortSurgeOffers, surgeDirectionKey, surgeEffectiveExpiry, surgeLifetimeMs } from "../services/surge-pricing";
 
 import { sessionCookieName, sessionLifetimeMs, scrypt, hashCode, verifyCode, validCode, loginKeys, loginRetryAfterSeconds, recordLoginFailure, rejectIfLoginBlocked, loginFailures, sendSession, endCurrentSession, revokeAllSessions, requireAdmin, requireOwner, requirePermission, hasPermission, effectivePermissions, isPermission, allPermissions, workspaceId, type Permission, type AuthAdmin } from "../auth/admin-auth";
+import { mobileSessionToken } from "../auth/admin-auth";
 import { normalizePhone, normalizeIdentifier } from "../lib/identifiers";
 import { findClosestProduct } from "../bot/search";
 import { messageCredit, messageHeader, formatProductResponse, formatHourlyPricingResponse, formatExtrasResponse } from "../bot/replies";
@@ -130,9 +131,9 @@ router.post("/auth/bootstrap", async (req, res, next) => {
       res.status(403).json({ error: "הגדרת קוד הבעלים אינה זמינה" });
       return;
     }
-    await sendSession(req, res, updated, "bootstrap");
+    const token = await sendSession(req, res, updated, "bootstrap");
     await audit(req, "auth.owner_setup", { type: "user", id: updated.id }, {}, updated.id);
-    res.json(BootstrapOwnerCodeResponse.parse({ admin: adminDto(updated) }));
+    res.json(BootstrapOwnerCodeResponse.parse({ admin: adminDto(updated), ...mobileSessionToken(req, token) }));
   } catch (error) {
     next(error);
   }
@@ -150,9 +151,9 @@ async function pinLogin(req: import("express").Request, res: import("express").R
     return;
   }
   for (const { key } of keys) loginFailures.delete(key);
-  await sendSession(req, res, admin, "pin");
+  const token = await sendSession(req, res, admin, "pin");
   await audit(req, "auth.login", { type: "user", id: admin.id }, { method: "pin" }, admin.id);
-  res.json(LoginAdminResponse.parse({ admin: adminDto(admin) }));
+  res.json(LoginAdminResponse.parse({ admin: adminDto(admin), ...mobileSessionToken(req, token) }));
 }
 
 router.post("/auth/login", async (req, res, next) => {
@@ -215,9 +216,9 @@ router.post("/auth/code/verify", async (req, res, next) => {
       return;
     }
     for (const { key } of keys) loginFailures.delete(key);
-    await sendSession(req, res, outcome.user, "whatsapp");
+    const token = await sendSession(req, res, outcome.user, "whatsapp");
     await audit(req, "auth.login", { type: "user", id: outcome.user.id }, { method: "whatsapp" }, outcome.user.id);
-    res.json(VerifyLoginCodeResponse.parse({ admin: adminDto(outcome.user) }));
+    res.json(VerifyLoginCodeResponse.parse({ admin: adminDto(outcome.user), ...mobileSessionToken(req, token) }));
   } catch (error) {
     next(error);
   }

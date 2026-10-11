@@ -76,6 +76,7 @@ import { expandCustomAbbreviations, isBuiltInAbbreviation, normalizeSearchText, 
 import { drivingDistanceKm, estimateReferenceRoute, estimatedPriceMatrix, estimatedWaitTime, formatRouteEstimate, isIntraCityRoute, parseUnlistedRoute, requiresManualCatalogPrice, resolveRouteAddresses } from "../services/route-estimate";
 import { formatBillingCalculation, parseBillingAmount } from "../services/billing-calculator";
 import { logger } from "../lib/logger";
+import { notifyWorkspace } from "../services/push";
 import { formatSurgePrice, isSurgeAboveCatalog, isSurgeActiveAt, matchSurgeProduct, matchesSurgeDirection, parseSurgeQuotes, sortSurgeOffers, surgeDirectionKey, surgeEffectiveExpiry, surgeLifetimeMs } from "../services/surge-pricing";
 
 import { sessionCookieName, sessionLifetimeMs, scrypt, hashCode, verifyCode, validCode, loginKeys, loginRetryAfterSeconds, recordLoginFailure, rejectIfLoginBlocked, loginFailures, sendSession, endCurrentSession, revokeAllSessions, requireAdmin, requireOwner, requirePermission, hasPermission, effectivePermissions, isPermission, allPermissions, workspaceId, type Permission, type AuthAdmin } from "../auth/admin-auth";
@@ -138,10 +139,10 @@ export async function captureSurgeQuote({ adminId, chatId, body, isGroup, sentAt
   });
   if (!matchedQuotes.length) return;
   const observedAt = new Date(timestamp);
-  await db.transaction(async (tx) => {
+  const recorded = await db.transaction(async (tx) => {
     const [locked] = await tx.select().from(priceBotSurgeSettings)
       .where(eq(priceBotSurgeSettings.adminId, adminId)).for("update");
-    if (!locked?.active || !locked.groupIdentifiers.includes(chatId) || timestamp < locked.startedAt.getTime()) return;
+    if (!locked?.active || !locked.groupIdentifiers.includes(chatId) || timestamp < locked.startedAt.getTime()) return false;
     for (const { quote, product, directionKey } of matchedQuotes) {
       // A newer regular-price quote supersedes a surge too; its expired row also
       // prevents delayed older surge messages from reactivating that price.
@@ -158,7 +159,17 @@ export async function captureSurgeQuote({ adminId, chatId, body, isGroup, sentAt
         setWhere: sql`${priceBotSurgeOffers.observedAt} < ${observedAt}`,
       });
     }
+    return true;
   });
+  const surges = recorded ? matchedQuotes.filter(({ quote, product }) => isSurgeAboveCatalog(quote, product)) : [];
+  if (surges.length) {
+    const { quote } = surges[0];
+    void notifyWorkspace(adminId, "surge", {
+      title: "מחיר עומס חדש",
+      body: `${quote.origin} ← ${quote.destination} · ₪${quote.price}${surges.length > 1 ? ` (+${surges.length - 1} נוספים)` : ""}`,
+      data: { screen: "surge" },
+    });
+  }
 }
 
 export async function currentSurgeOffers(
@@ -310,6 +321,13 @@ export async function processPriceBotMessage({
     }
   } else responseText = "לבדיקת מחיר שלח/י: מ [מסלול]";
   await db.insert(priceBotLookups).values({ adminId, from, body, matched, estimate });
+  if (target && !matched && billingAmount === null && /^מ\s*\S/u.test(message)) {
+    void notifyWorkspace(adminId, "lookups", {
+      title: "בקשת מחיר חדשה",
+      body: `${message.slice(1).trim()} · ${estimate ? "הערכה מוכנה לאישור" : "אין מחיר במחירון"}`,
+      data: { screen: "requests" },
+    });
+  }
   if (target && notifyAdmins && !matched && !estimate && groupPriceQuery) {
     const notification = `📍 *בקשת מחיר ללא מחיר במחירון*\nמסלול: ${body.trim()}\nמאת: ${from}\n${localRouteWithoutPrice ? "נסיעה בתוך העיר — לא נשלחה הערכת מפות." : "לא נשלחה הערכת מחיר."}\nהבקשה ממתינה באתר הניהול.`;
     void workspaceMembers(adminId)
@@ -333,7 +351,44 @@ whatsappWeb.onEvent((event) => {
   void audit(null, action, { type: "workspace", id: event.adminId }, {
     ...(event.detail ? { detail: event.detail } : {}), ...(event.phoneNumber ? { phoneNumber: event.phoneNumber } : {}),
   }, null);
+  pushWhatsAppEvent(event.adminId, event.type);
 });
+
+// Phone alerts for the bot's WhatsApp. Short reconnects (network blips) stay silent:
+// a "disconnected" alert is only sent if the link is still down a few minutes later.
+const whatsappAlertDelayMs = 3 * 60_000;
+const pendingWhatsAppAlerts = new Map<number, NodeJS.Timeout>();
+const alertedWorkspaces = new Set<number>();
+function pushWhatsAppEvent(adminId: number, type: string) {
+  const alert = () => {
+    alertedWorkspaces.add(adminId);
+    void notifyWorkspace(adminId, "whatsapp", {
+      title: "WhatsApp של הבוט לא מחובר",
+      body: type === "logged_out" || type === "replaced"
+        ? "החיבור נותק מהטלפון. יש לחבר מחדש כדי שהבוט ימשיך לענות."
+        : "הבוט לא עונה כרגע. בדקו את החיבור באפליקציה.",
+      data: { screen: "whatsapp" },
+    });
+  };
+  if (type === "connected") {
+    clearTimeout(pendingWhatsAppAlerts.get(adminId));
+    pendingWhatsAppAlerts.delete(adminId);
+    if (alertedWorkspaces.delete(adminId)) {
+      void notifyWorkspace(adminId, "whatsapp", { title: "WhatsApp חובר מחדש", body: "הבוט חזר לענות.", data: { screen: "whatsapp" } });
+    }
+  } else if (type === "logged_out" || type === "replaced") {
+    clearTimeout(pendingWhatsAppAlerts.get(adminId));
+    pendingWhatsAppAlerts.delete(adminId);
+    alert();
+  } else if (type === "disconnected" && !pendingWhatsAppAlerts.has(adminId) && !alertedWorkspaces.has(adminId)) {
+    const timer = setTimeout(() => {
+      pendingWhatsAppAlerts.delete(adminId);
+      if (!whatsappWeb.connectedAdminIds().includes(adminId)) alert();
+    }, whatsappAlertDelayMs);
+    timer.unref();
+    pendingWhatsAppAlerts.set(adminId, timer);
+  }
+}
 
 whatsappWeb.registerMessageHandler(async (message) => {
   if (message.isGroup) await captureSurgeQuote(message);

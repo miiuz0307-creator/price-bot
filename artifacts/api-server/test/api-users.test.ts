@@ -149,6 +149,109 @@ test("users, permissions, sessions and sign-in", { timeout: 120_000 }, async (t)
     assert.ok(overview.json.connections.some((row: Json) => row.adminId === owner.id && row.sharedUsers >= 1));
   });
 
+  await t.test("mobile app: bearer token sign-in and push devices", async () => {
+    const { priceBotPushDevices } = await import("@workspace/db") as Record<string, any>;
+    const { notifyWorkspace } = await import("../src/services/push");
+    const http = await import("node:http");
+    const mobile = async (method: string, path: string, body?: unknown, token?: string) => {
+      const response = await fetch(`${base}${path}`, {
+        method,
+        headers: {
+          "x-price-bot-client": "mobile",
+          ...(body === undefined ? {} : { "content-type": "application/json" }),
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      const text = await response.text();
+      return { status: response.status, json: (text ? JSON.parse(text) : null) as Json };
+    };
+
+    const web = await call("POST", "/auth/pin", { identifier: "0504107826", code: "2468" });
+    assert.equal(web.status, 200);
+    assert.equal(web.json.token, undefined, "browsers never receive the token");
+
+    const login = await mobile("POST", "/auth/pin", { identifier: "0504107826", code: "2468" });
+    assert.equal(login.status, 200, JSON.stringify(login.json));
+    const token = login.json.token as string;
+    assert.ok(token && token.length >= 40);
+    assert.equal((await mobile("GET", "/auth/session", undefined, token)).json.admin.id, owner.id);
+    assert.equal((await mobile("GET", "/products", undefined, token)).status, 200);
+    assert.equal((await mobile("GET", "/auth/session", undefined, "x".repeat(43))).status, 401);
+
+    const pushToken = "ExponentPushToken[test-device-0001]";
+    await db.delete(priceBotPushDevices).where(eq(priceBotPushDevices.token, pushToken));
+    const registered = await mobile("POST", "/push/devices", { token: pushToken, platform: "android" }, token);
+    assert.equal(registered.status, 200, JSON.stringify(registered.json));
+    assert.deepEqual(registered.json.preferences, { lookups: true, whatsapp: true, surge: false });
+    const updated = await mobile("POST", "/push/devices", { token: pushToken, platform: "android", preferences: { lookups: true, whatsapp: false, surge: true } }, token);
+    assert.equal(updated.json.preferences.surge, true);
+
+    // Fake Expo push service: records messages and reports the device as gone.
+    const received: Json[] = [];
+    const fcmReceived: Json[] = [];
+    const fake = http.createServer((req, res) => {
+      let raw = "";
+      req.on("data", (chunk) => { raw += chunk; });
+      req.on("end", () => {
+        res.setHeader("content-type", "application/json");
+        if (req.url === "/token") {
+          assert.match(raw, /grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer/);
+          res.end(JSON.stringify({ access_token: "fake-access", expires_in: 3600 }));
+          return;
+        }
+        if (req.url === "/fcm") {
+          assert.equal(req.headers.authorization, "Bearer fake-access");
+          fcmReceived.push(JSON.parse(raw).message);
+          res.end("{}");
+          return;
+        }
+        const messages = JSON.parse(raw) as Json[];
+        received.push(...messages);
+        res.end(JSON.stringify({ data: messages.map(() => ({ status: "error", details: { error: "DeviceNotRegistered" } })) }));
+      });
+    });
+    await new Promise((resolve) => fake.listen(0, () => resolve(null)));
+    process.env.EXPO_PUSH_URL = `http://127.0.0.1:${(fake.address() as AddressInfo).port}/send`;
+    try {
+      await notifyWorkspace(owner.id, "whatsapp", { title: "x", body: "y" });
+      assert.equal(received.length, 0, "muted kind is not sent");
+      await notifyWorkspace(owner.id, "lookups", { title: "בקשת מחיר חדשה", body: "דימונה ערד", data: { screen: "requests" } });
+      assert.equal(received.length, 1);
+      assert.equal(received[0].to, pushToken);
+      assert.equal(received[0].data.kind, "lookups");
+      const left = await db.select().from(priceBotPushDevices).where(eq(priceBotPushDevices.token, pushToken));
+      assert.equal(left.length, 0, "unregistered devices are removed");
+
+      // Android phones register their Firebase token; the server signs in with a service account.
+      const { generateKeyPairSync } = await import("node:crypto");
+      const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+      const fakeBase = `http://127.0.0.1:${(fake.address() as AddressInfo).port}`;
+      process.env.FIREBASE_SERVICE_ACCOUNT = JSON.stringify({
+        project_id: "demo", client_email: "push@demo.iam.gserviceaccount.com",
+        private_key: privateKey.export({ type: "pkcs8", format: "pem" }), token_uri: `${fakeBase}/token`,
+      });
+      process.env.FCM_SEND_URL = `${fakeBase}/fcm`;
+      const fcmToken = "fcm:APA91b-test-device-token-0002";
+      await db.delete(priceBotPushDevices).where(eq(priceBotPushDevices.token, fcmToken));
+      assert.equal((await mobile("POST", "/push/devices", { token: fcmToken, platform: "android" }, token)).status, 200);
+      await notifyWorkspace(owner.id, "whatsapp", { title: "WhatsApp חובר מחדש", body: "הבוט חזר לענות.", data: { screen: "whatsapp" } });
+      assert.equal(fcmReceived.length, 1);
+      assert.equal(fcmReceived[0].token, fcmToken);
+      assert.equal(fcmReceived[0].notification.title, "WhatsApp חובר מחדש");
+      assert.equal(fcmReceived[0].data.screen, "whatsapp");
+      await db.delete(priceBotPushDevices).where(eq(priceBotPushDevices.token, fcmToken));
+    } finally {
+      delete process.env.EXPO_PUSH_URL;
+      delete process.env.FIREBASE_SERVICE_ACCOUNT;
+      delete process.env.FCM_SEND_URL;
+      fake.close();
+    }
+
+    assert.equal((await mobile("POST", "/auth/logout", undefined, token)).status, 204);
+    assert.equal((await mobile("GET", "/auth/session", undefined, token)).status, 401);
+  });
+
   await t.test("logout ends the session", async () => {
     assert.equal((await call("POST", "/auth/logout", undefined, ownerCookie)).status, 204);
     assert.equal((await call("GET", "/auth/session", undefined, ownerCookie)).status, 401);

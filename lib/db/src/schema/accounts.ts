@@ -38,5 +38,16 @@ export const priceBotAuditLog = pgTable("price_bot_audit_log", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [index("price_bot_audit_log_created_idx").on(table.createdAt), index("price_bot_audit_log_actor_idx").on(table.actorId)]);
 
+/** Phones signed in to the mobile app that accept push notifications (Expo push tokens). */
+export const priceBotPushDevices = pgTable("price_bot_push_devices", {
+  id: serial("id").primaryKey(),
+  adminId: integer("admin_id").notNull().references(() => priceBotAdmins.id, { onDelete: "cascade" }),
+  token: text("token").notNull().unique(),
+  platform: text("platform").notNull().default("android"),
+  preferences: jsonb("preferences").$type<{ lookups?: boolean; whatsapp?: boolean; surge?: boolean }>().notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("price_bot_push_devices_admin_idx").on(table.adminId)]);
+
 export type PriceBotSession = typeof priceBotSessions.$inferSelect;
 export type PriceBotAuditEntry = typeof priceBotAuditLog.$inferSelect;

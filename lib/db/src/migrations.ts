@@ -169,6 +169,23 @@ CREATE INDEX IF NOT EXISTS price_bot_audit_log_created_idx ON price_bot_audit_lo
 CREATE INDEX IF NOT EXISTS price_bot_audit_log_actor_idx ON price_bot_audit_log (actor_id);
 `,
   },
+  {
+    id: "0002_push_devices",
+    sql: `
+CREATE TABLE IF NOT EXISTS price_bot_push_devices (
+  id serial PRIMARY KEY,
+  admin_id integer NOT NULL,
+  token text NOT NULL,
+  platform text NOT NULL DEFAULT 'android',
+  preferences jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  last_seen_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT price_bot_push_devices_token_unique UNIQUE (token),
+  CONSTRAINT price_bot_push_devices_admin_id_price_bot_admins_id_fk FOREIGN KEY (admin_id) REFERENCES price_bot_admins(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS price_bot_push_devices_admin_idx ON price_bot_push_devices (admin_id);
+`,
+  },
 ];
 
 /** Applies pending migrations once, under an advisory lock (safe with several instances). */

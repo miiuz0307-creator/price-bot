@@ -22,6 +22,8 @@ tags:
     description: Web administrator authentication
   - name: dashboard
     description: Dashboard summary operations
+  - name: push
+    description: Push notifications to the mobile app
   - name: integration
     description: WhatsApp connection status
   - name: targets
@@ -479,6 +481,38 @@ paths:
       responses:
         "204":
           description: Logged out
+  /push/devices:
+    post:
+      operationId: registerPushDevice
+      tags: [push]
+      summary: Register this phone for push notifications (or update its preferences)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushDeviceInput"
+      responses:
+        "200":
+          description: Registered device
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushDevice"
+  /push/devices/remove:
+    post:
+      operationId: removePushDevice
+      tags: [push]
+      summary: Stop push notifications to this phone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushDeviceRemove"
+      responses:
+        "204":
+          description: Removed
   /dashboard/summary:
     get:
       operationId: getDashboardSummary
@@ -950,6 +984,37 @@ components:
       properties:
         admin:
           $ref: "#/components/schemas/Admin"
+        token:
+          type: string
+          description: Session token, only for the mobile app (sent with header X-Price-Bot-Client mobile); used as Bearer.
+    PushPreferences:
+      type: object
+      required: [lookups, whatsapp, surge]
+      properties:
+        lookups: { type: boolean, description: New price requests waiting for a manager }
+        whatsapp: { type: boolean, description: WhatsApp disconnected / reconnected }
+        surge: { type: boolean, description: New surge prices from monitored groups }
+    PushDeviceInput:
+      type: object
+      required: [token, platform]
+      properties:
+        token: { type: string, minLength: 10, maxLength: 300 }
+        platform: { type: string, enum: [android, ios, web] }
+        preferences:
+          $ref: "#/components/schemas/PushPreferences"
+    PushDeviceRemove:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string, minLength: 10, maxLength: 300 }
+    PushDevice:
+      type: object
+      required: [token, platform, preferences]
+      properties:
+        token: { type: string }
+        platform: { type: string }
+        preferences:
+          $ref: "#/components/schemas/PushPreferences"
     DashboardSummary:
       type: object
       required: [productCount, activeProductCount, adminCount, lookupCount, lastLookupAt]
