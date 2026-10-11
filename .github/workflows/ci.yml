@@ -279,12 +279,17 @@ jobs:
       - name: Build signed APK
         working-directory: artifacts/price-bot-mobile/android
         run: |
-          ../../../scripts/ci/run.sh "Gradle assembleRelease" ./gradlew assembleRelease --no-daemon --stacktrace \
+          set -o pipefail
+          ./gradlew assembleRelease --no-daemon \
             -PreactNativeArchitectures=arm64-v8a,armeabi-v7a \
             -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/artifacts/price-bot-mobile/credentials/android.keystore \
             -Pandroid.injected.signing.store.password=pricebot-sideload \
             -Pandroid.injected.signing.key.alias=pricebot \
-            -Pandroid.injected.signing.key.password=pricebot-sideload
+            -Pandroid.injected.signing.key.password=pricebot-sideload 2>&1 | tee $RUNNER_TEMP/gradle.log || {
+            { grep -n -A25 "What went wrong" $RUNNER_TEMP/gradle.log; grep -n -i -B2 -A8 "error:\|SyntaxError\|Unable to resolve" $RUNNER_TEMP/gradle.log | head -80; } > $RUNNER_TEMP/gradle-errors.txt
+            echo "::error title=Gradle build failed::$(head -c 6000 $RUNNER_TEMP/gradle-errors.txt | sed -e 's/%/%25/g' -e 's/\x1b\[[0-9;]*m//g' | awk 'BEGIN{ORS="%0A"} {print}')"
+            exit 1
+          }
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
