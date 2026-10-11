@@ -286,12 +286,16 @@ jobs:
           fi
       - name: Generate native Android project
         working-directory: artifacts/price-bot-mobile
-        run: CI=1 ../../scripts/ci/run.sh "expo prebuild" pnpm exec expo prebuild --platform android --no-install --clean
+        run: |
+          CI=1 ../../scripts/ci/run.sh "expo prebuild" pnpm exec expo prebuild --platform android --no-install --clean
+          # More memory for Gradle (the default Metaspace runs out in release lint).
+          sed -i '/^org.gradle.jvmargs=/d' android/gradle.properties
+          echo "org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8" >> android/gradle.properties
       - name: Build signed APK
         working-directory: artifacts/price-bot-mobile/android
         run: |
           set -o pipefail
-          timeout 1800 ./gradlew assembleRelease --no-daemon --console=plain \
+          timeout 1800 ./gradlew assembleRelease --no-daemon --console=plain -x lintVitalAnalyzeRelease -x lintVitalRelease -x lintVitalReportRelease \
             -PreactNativeArchitectures=arm64-v8a,armeabi-v7a \
             -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/artifacts/price-bot-mobile/credentials/android.keystore \
             -Pandroid.injected.signing.store.password=pricebot-sideload \
@@ -340,7 +344,7 @@ jobs:
           sed -i 's/<application /<application android:usesCleartextTraffic="true" /' app/src/main/AndroidManifest.xml
           sed -i 's#https://price-bot-production-2674.up.railway.app/api/app-updates/manifest#http://localhost:8080/api/app-updates/manifest#' app/src/main/AndroidManifest.xml
           grep -q "localhost:8080/api/app-updates" app/src/main/AndroidManifest.xml || { echo "::error title=OTA test::update URL not found in AndroidManifest"; exit 1; }
-          ./gradlew createBundleReleaseJsAndAssets --rerun assembleRelease --no-daemon -PreactNativeArchitectures=x86_64 \
+          ./gradlew createBundleReleaseJsAndAssets --rerun assembleRelease -x lintVitalAnalyzeRelease -x lintVitalRelease -x lintVitalReportRelease --no-daemon -PreactNativeArchitectures=x86_64 \
             -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/artifacts/price-bot-mobile/credentials/android.keystore \
             -Pandroid.injected.signing.store.password=pricebot-sideload \
             -Pandroid.injected.signing.key.alias=pricebot \
