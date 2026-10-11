@@ -236,6 +236,15 @@ jobs:
     needs: check
     permissions:
       contents: write
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pricebot
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       APP_VERSION_CODE: ${{ github.run_number }}
     steps:
@@ -294,10 +303,28 @@ jobs:
         run: cp artifacts/price-bot-mobile/android/app/build/outputs/apk/release/app-release.apk $RUNNER_TEMP/phone.apk
       # Smoke test on an Android emulator (x86_64 build of the same code): the app must
       # start, show the sign-in screen and not crash. Nothing is sent to the real server.
-      - name: Build emulator APK (x86_64)
-        working-directory: artifacts/price-bot-mobile/android
+      # Test server with demo data, reachable from the emulator through `adb reverse`.
+      - name: Start test server with demo data
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/pricebot
+          SESSION_SECRET: ci-only-secret-not-used-in-production
+          NODE_ENV: production
+          PORT: 8080
+          OWNER_INITIAL_CODE: "2468"
+          TZ: Asia/Jerusalem
         run: |
-          ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=x86_64 \
+          pnpm --filter @workspace/api-server run build > $RUNNER_TEMP/api-build.log 2>&1 || { tail -n 40 $RUNNER_TEMP/api-build.log; exit 1; }
+          WHATSAPP_AUTH_DIR=$RUNNER_TEMP/wa nohup node artifacts/api-server/dist/index.mjs > $RUNNER_TEMP/server.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:8080/api/healthz >/dev/null && break; sleep 1; done
+          scripts/ci/run.sh "Seed demo data" scripts/ci/seed-demo.sh
+      - name: Build emulator APK (x86_64, talks to the test server)
+        working-directory: artifacts/price-bot-mobile/android
+        env:
+          EXPO_PUBLIC_API_URL: http://localhost:8080
+        run: |
+          # Test build only: allow plain http to the local test server.
+          sed -i 's/<application /<application android:usesCleartextTraffic="true" /' app/src/main/AndroidManifest.xml
+          ./gradlew createBundleReleaseJsAndAssets --rerun assembleRelease --no-daemon -PreactNativeArchitectures=x86_64 \
             -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/artifacts/price-bot-mobile/credentials/android.keystore \
             -Pandroid.injected.signing.store.password=pricebot-sideload \
             -Pandroid.injected.signing.key.alias=pricebot \
@@ -314,8 +341,9 @@ jobs:
           arch: x86_64
           target: google_apis
           disable-animations: true
+          profile: pixel_6
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: bash scripts/ci/android-smoke.sh $RUNNER_TEMP/emulator.apk docs/screenshots/app
+          script: bash scripts/ci/android-smoke.sh $RUNNER_TEMP/emulator.apk docs/screenshots/app/android
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -343,4 +371,4 @@ jobs:
           git config user.email "ci-bot@users.noreply.github.com"
           git pull --rebase --autostash origin "${GITHUB_REF#refs/heads/}" || true
           git add docs/screenshots/app
-          git diff --cached --quiet || { git commit -m "docs: Android emulator screenshot [ci]"; git push; }
+          git diff --cached --quiet || { git commit -m "docs: Android emulator screenshots [ci]"; git push; }

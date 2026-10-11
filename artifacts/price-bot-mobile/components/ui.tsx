@@ -32,9 +32,13 @@ const variants: Record<Variant, TextStyle> = {
   numXl: { fontFamily: fonts.head, fontSize: 32, lineHeight: 36 },
 };
 
+// React Native on Android mirrors left/right text alignment inside right-to-left layouts,
+// so "start of line" (the right side in Hebrew) is 'left' there and 'right' elsewhere.
+export const textStart: TextStyle['textAlign'] = Platform.OS === 'android' ? 'left' : 'right';
+
 export function Txt({ variant = 'body', color, style, center, ...props }: TextProps & { variant?: Variant; color?: string; center?: boolean }) {
   const { c } = useTheme();
-  return <Text {...props} style={[variants[variant], { color: color ?? c.text, textAlign: center ? 'center' : 'right' }, style]} />;
+  return <Text {...props} style={[variants[variant], { color: color ?? c.text, textAlign: center ? 'center' : textStart }, style]} />;
 }
 
 // ---------- Layout ----------
