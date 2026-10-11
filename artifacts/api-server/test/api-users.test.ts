@@ -273,8 +273,14 @@ test("users, permissions, sessions and sign-in", { timeout: 120_000 }, async (t)
     assert.equal(created.status, 201, JSON.stringify(created.json));
     assert.ok(await waitFor(/event: invalidate\ndata: \{"topics":\["catalog"\]\}/), `got: ${received}`);
     await call("DELETE", `/abbreviations/${created.json.id}`, undefined, ownerCookie);
+    await reader.cancel().catch(() => undefined);
     controller.abort();
-    assert.equal((await fetch(`${base}/live`)).status, 401, "requires sign-in");
+    const anonymous = await fetch(`${base}/live`);
+    assert.equal(anonymous.status, 401, "requires sign-in");
+    await anonymous.text();
+    const { liveClientCount } = await import("../src/services/live");
+    for (let i = 0; i < 20 && liveClientCount() > 0; i += 1) await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(liveClientCount(), 0, "closed streams are released");
   });
 
   await t.test("logout ends the session", async () => {
@@ -290,6 +296,7 @@ test("users, permissions, sessions and sign-in", { timeout: 120_000 }, async (t)
 
   await db.delete(priceBotAdmins).where(inArray(priceBotAdmins.phone, createdPhones));
   await whatsappWeb.shutdown();
+  server.closeAllConnections();
   server.close();
   await pool.end();
 });

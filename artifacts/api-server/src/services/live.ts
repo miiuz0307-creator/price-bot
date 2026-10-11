@@ -40,10 +40,14 @@ export const liveStream: RequestHandler = (req: Request, res: Response) => {
   clients.add(res);
   // Keep proxies from closing an idle stream.
   const heartbeat = setInterval(() => res.write(": ping\n\n"), 25_000);
-  req.on("close", () => {
+  heartbeat.unref();
+  // "close" on the response fires when the connection goes away (the request's
+  // own "close" can fire as soon as a GET has been read).
+  res.on("close", () => {
     clearInterval(heartbeat);
     clients.delete(res);
   });
+  req.socket.setTimeout(0);
 };
 
 /** Which data a successful change (POST/PATCH/PUT/DELETE) under /api affects. */
