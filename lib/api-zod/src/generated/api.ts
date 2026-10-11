@@ -520,7 +520,8 @@ export const VerifyLoginCodeResponse = zod.object({
   "invitedAt": zod.string().nullable(),
   "lastLoginAt": zod.string().nullable(),
   "lastSeenAt": zod.string().nullable()
-})
+}),
+  "token": zod.string().optional().describe('Session token, only for the mobile app (sent with header X-Price-Bot-Client mobile); used as Bearer.')
 })
 
 
@@ -554,7 +555,8 @@ export const LoginWithPinResponse = zod.object({
   "invitedAt": zod.string().nullable(),
   "lastLoginAt": zod.string().nullable(),
   "lastSeenAt": zod.string().nullable()
-})
+}),
+  "token": zod.string().optional().describe('Session token, only for the mobile app (sent with header X-Price-Bot-Client mobile); used as Bearer.')
 })
 
 
@@ -604,7 +606,8 @@ export const LoginAdminResponse = zod.object({
   "invitedAt": zod.string().nullable(),
   "lastLoginAt": zod.string().nullable(),
   "lastSeenAt": zod.string().nullable()
-})
+}),
+  "token": zod.string().optional().describe('Session token, only for the mobile app (sent with header X-Price-Bot-Client mobile); used as Bearer.')
 })
 
 
@@ -634,7 +637,8 @@ export const BootstrapOwnerCodeResponse = zod.object({
   "invitedAt": zod.string().nullable(),
   "lastLoginAt": zod.string().nullable(),
   "lastSeenAt": zod.string().nullable()
-})
+}),
+  "token": zod.string().optional().describe('Session token, only for the mobile app (sent with header X-Price-Bot-Client mobile); used as Bearer.')
 })
 
 
@@ -657,7 +661,8 @@ export const GetCurrentSessionResponse = zod.object({
   "invitedAt": zod.string().nullable(),
   "lastLoginAt": zod.string().nullable(),
   "lastSeenAt": zod.string().nullable()
-})
+}),
+  "token": zod.string().optional().describe('Session token, only for the mobile app (sent with header X-Price-Bot-Client mobile); used as Bearer.')
 })
 
 
@@ -665,6 +670,50 @@ export const GetCurrentSessionResponse = zod.object({
  * @summary End the current web session
  */
 export const LogoutAdminResponse = zod.void()
+
+
+/**
+ * @summary Register this phone for push notifications (or update its preferences)
+ */
+export const registerPushDeviceBodyTokenMin = 10;
+export const registerPushDeviceBodyTokenMax = 300;
+
+
+
+export const RegisterPushDeviceBody = zod.object({
+  "token": zod.string().min(registerPushDeviceBodyTokenMin).max(registerPushDeviceBodyTokenMax),
+  "platform": zod.enum(['android', 'ios', 'web']),
+  "preferences": zod.object({
+  "lookups": zod.boolean().describe('New price requests waiting for a manager'),
+  "whatsapp": zod.boolean().describe('WhatsApp disconnected \/ reconnected'),
+  "surge": zod.boolean().describe('New surge prices from monitored groups')
+}).optional()
+})
+
+export const RegisterPushDeviceResponse = zod.object({
+  "token": zod.string(),
+  "platform": zod.string(),
+  "preferences": zod.object({
+  "lookups": zod.boolean().describe('New price requests waiting for a manager'),
+  "whatsapp": zod.boolean().describe('WhatsApp disconnected \/ reconnected'),
+  "surge": zod.boolean().describe('New surge prices from monitored groups')
+})
+})
+
+
+/**
+ * @summary Stop push notifications to this phone
+ */
+export const removePushDeviceBodyTokenMin = 10;
+export const removePushDeviceBodyTokenMax = 300;
+
+
+
+export const RemovePushDeviceBody = zod.object({
+  "token": zod.string().min(removePushDeviceBodyTokenMin).max(removePushDeviceBodyTokenMax)
+})
+
+export const RemovePushDeviceResponse = zod.void()
 
 
 /**

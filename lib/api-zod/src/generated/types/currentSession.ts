@@ -9,4 +9,6 @@ import type { Admin } from './admin';
 
 export interface CurrentSession {
   admin: Admin;
+  /** Session token, only for the mobile app (sent with header X-Price-Bot-Client mobile); used as Bearer. */
+  token?: string;
 }

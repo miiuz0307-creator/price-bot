@@ -293,6 +293,50 @@ export interface AuthStatus {
 
 export interface CurrentSession {
   admin: Admin;
+  /** Session token, only for the mobile app (sent with header X-Price-Bot-Client mobile); used as Bearer. */
+  token?: string;
+}
+
+export interface PushPreferences {
+  /** New price requests waiting for a manager */
+  lookups: boolean;
+  /** WhatsApp disconnected / reconnected */
+  whatsapp: boolean;
+  /** New surge prices from monitored groups */
+  surge: boolean;
+}
+
+export type PushDeviceInputPlatform = typeof PushDeviceInputPlatform[keyof typeof PushDeviceInputPlatform];
+
+
+export const PushDeviceInputPlatform = {
+  android: 'android',
+  ios: 'ios',
+  web: 'web',
+} as const;
+
+export interface PushDeviceInput {
+  /**
+     * @minLength 10
+     * @maxLength 300
+     */
+  token: string;
+  platform: PushDeviceInputPlatform;
+  preferences?: PushPreferences;
+}
+
+export interface PushDeviceRemove {
+  /**
+     * @minLength 10
+     * @maxLength 300
+     */
+  token: string;
+}
+
+export interface PushDevice {
+  token: string;
+  platform: string;
+  preferences: PushPreferences;
 }
 
 export interface DashboardSummary {
