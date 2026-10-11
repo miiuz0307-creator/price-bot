@@ -271,7 +271,8 @@ test("users, permissions, sessions and sign-in", { timeout: 120_000 }, async (t)
     assert.ok(await waitFor(/event: ready/), "stream opens");
     const created = await call("POST", "/abbreviations", { shortcut: "בדק", expansion: "בדיקת סנכרון" }, ownerCookie);
     assert.equal(created.status, 201, JSON.stringify(created.json));
-    assert.ok(await waitFor(/event: invalidate\ndata: \{"topics":\["catalog"\]\}/), `got: ${received}`);
+    // Changes within a quarter second are announced together, so other topics may come along.
+    assert.ok(await waitFor(/event: invalidate\ndata: \{"topics":\[[^\]]*"catalog"[^\]]*\]\}/), `got: ${received}`);
     await call("DELETE", `/abbreviations/${created.json.id}`, undefined, ownerCookie);
     await reader.cancel().catch(() => undefined);
     controller.abort();
