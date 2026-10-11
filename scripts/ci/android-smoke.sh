@@ -31,11 +31,15 @@ signed=0
 if [ "$started" = 1 ]; then
   tap_text "כניסה עם קוד אישי"; sleep 2
   mapfile -t fields < <(ui | grep 'class="android.widget.EditText"' | center)
+  echo "::notice title=Sign-in fields::${#fields[@]} fields: ${fields[*]}"
   if [ "${#fields[@]}" -ge 2 ]; then
-    adb shell input tap ${fields[0]}; adb shell input text 0504107826
-    adb shell input tap ${fields[1]}; adb shell input text 2468
-    adb shell input keyevent 66
-    wait_text "מסלולים במחירון" 20 && signed=1
+    adb shell input tap ${fields[0]}; sleep 1; adb shell input text 0504107826
+    adb shell input tap ${fields[1]}; sleep 1; adb shell input text 2468
+    shot pin-filled 1
+    adb shell input keyevent 66; sleep 2
+    tap_text "כניסה"
+    wait_text "מסלולים במחירון" 25 && signed=1
+    [ "$signed" = 1 ] || { shot signin-failed 1; echo "::warning title=Sign-in screen::$(ui | grep -o 'text="[^"]*"' | grep -v 'text=""' | head -30 | tr '\n' ' ')"; }
   fi
 fi
 if [ "$signed" = 1 ]; then
