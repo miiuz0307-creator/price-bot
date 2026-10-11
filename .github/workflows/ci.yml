@@ -365,7 +365,7 @@ jobs:
           gh release create "app-v$version" "$apk" --target "${{ github.sha }}" --title "מחירון לאנדרואיד $version" --notes-file $RUNNER_TEMP/notes.md --latest
           echo "::notice title=APK ready::https://github.com/${{ github.repository }}/releases/tag/app-v$version"
       - name: Commit emulator screenshot
-        if: github.ref != 'refs/heads/main'
+        if: always() && github.ref != 'refs/heads/main'
         run: |
           git config user.name "ci-bot"
           git config user.email "ci-bot@users.noreply.github.com"

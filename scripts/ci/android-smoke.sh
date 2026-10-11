@@ -20,8 +20,11 @@ shot() { sleep "${2:-3}"; adb exec-out screencap -p > "$prefix-$1.png"; }
 alive() { [ -n "$(adb shell pidof $pkg)" ]; }
 
 adb shell monkey -p $pkg -c android.intent.category.LAUNCHER 1 >/dev/null
-started=0; wait_text "כניסה" 45 && started=1
+started=0; wait_text "כניסה" 60 && started=1
 shot login 2
+if [ "$started" != 1 ]; then
+  echo "::warning title=UI dump::$(adb shell uiautomator dump /sdcard/ui.xml 2>&1 | head -3 | tr '\n' ' ') $(adb shell cat /sdcard/ui.xml 2>/dev/null | head -c 1500 | sed -e 's/%/%25/g')"
+fi
 
 # Sign in with the demo owner's personal code.
 signed=0
