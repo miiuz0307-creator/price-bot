@@ -16,7 +16,7 @@ done
 sleep 3
 adb exec-out screencap -p > "$out/android-emulator-login.png"
 adb logcat -d > /tmp/logcat.txt
-crash=$(grep -E "FATAL EXCEPTION|AndroidRuntime: |ReactNativeJS: .*(Error|Invariant)" /tmp/logcat.txt | head -n 40)
+crash=$(grep -E "FATAL EXCEPTION| E AndroidRuntime| E ReactNativeJS" /tmp/logcat.txt | head -n 40)
 alive=$(adb shell pidof $pkg || true)
 if [ -n "$crash" ] || [ -z "$alive" ] || [ "$ok" != 1 ]; then
   msg="started=$ok pid=${alive:-none}%0A$(echo "$crash" | sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}')"

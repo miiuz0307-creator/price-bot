@@ -4,6 +4,7 @@
 
 - ניתוח המערכת ותוכנית השדרוג: [`docs/ANALYSIS-AND-PLAN.md`](docs/ANALYSIS-AND-PLAN.md)
 - משתני סביבה: [`.env.example`](.env.example)
+- אפליקציית הטלפון — התקנה, עדכונים והתראות: [`docs/MOBILE-APP.md`](docs/MOBILE-APP.md)
 
 ## מבנה
 
@@ -11,7 +12,7 @@
 |---|---|
 | `artifacts/api-server` | שרת Express, מנוע הבוט, חיבורי WhatsApp |
 | `artifacts/price-bot` | אתר הניהול (React + Vite) |
-| `artifacts/price-bot-mobile` | אפליקציית Expo (מוקפאת, ראו תוכנית) |
+| `artifacts/price-bot-mobile` | אפליקציית הטלפון (Expo / React Native) — אנדרואיד, ובהמשך iPhone |
 | `lib/db` | סכמת מסד הנתונים (Drizzle + PostgreSQL) |
 | `lib/api-spec` | חוזה ה־API (OpenAPI). אחרי שינוי: `pnpm --filter @workspace/api-spec run codegen` |
 
@@ -48,3 +49,13 @@ pnpm --filter @workspace/price-bot run dev              # האתר, בחלון �
 ## בדיקות אוטומטיות
 
 בכל `push` ל־GitHub רצות בדיקת טיפוסים, בדיקות, בנייה ובניית Docker (`.github/workflows/ci.yml`). ✗ אדום ב־GitHub = לא לפרוס את הגרסה הזו.
+
+## אפליקציית הטלפון
+
+אותו שרת, אותו מסד ואותם משתמשים כמו האתר. פרטים מלאים: [`docs/MOBILE-APP.md`](docs/MOBILE-APP.md).
+
+- **בניית APK**: מילה `[apk]` בהודעת ה־commit, או GitHub ← Actions ← CI ← Run workflow. הקובץ מתפרסם ב־Releases (`app-v1.0.N`), אחרי בדיקה שהאפליקציה עולה באמולטור.
+- **צילומי מסך**: `[screenshots]` בהודעת ה־commit (ענף עבודה) → `docs/screenshots/app`.
+- **שינוי חבילות** ב־`package.json`: `[update-lockfile]` בהודעת ה־commit, וה־CI יעדכן את `pnpm-lock.yaml`.
+- **הרצה מקומית**: `pnpm --filter @workspace/price-bot-mobile start` (Expo). כתובת שרת אחרת: `EXPO_PUBLIC_API_URL=http://...`.
+- מפתח החתימה (`credentials/android.keystore`) חייב להישאר זהה — אחרת אי אפשר לעדכן אפליקציה מותקנת בלי להסיר אותה.

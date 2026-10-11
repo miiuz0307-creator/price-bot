@@ -12,7 +12,7 @@ export function Icon({ name, size = 22, color, strokeWidth = 2 }: { name: IconNa
       ? 'M12 3c2 3 5 5 5 9a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 1-8z'
       : 'M21 11.5a8.4 8.4 0 0 1-12.4 7.4L3 21l2.1-5.4A8.4 8.4 0 1 1 21 11.5z';
     return (
-      <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Svg width={size} height={size} viewBox={name === 'flame' ? '3 1 18 18' : '0 0 24 24'} fill="none">
         <Path d={d} stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
       </Svg>
     );
