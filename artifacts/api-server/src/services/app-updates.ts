@@ -1,4 +1,4 @@
-import { createHash, createPublicKey, createVerify, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, createPublicKey, createVerify, randomUUID, timingSafeEqual, type JsonWebKey } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
