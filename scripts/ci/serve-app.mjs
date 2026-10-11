@@ -23,4 +23,4 @@ http.createServer((req, res) => {
   if (!file.startsWith(dir) || !existsSync(file) || statSync(file).isDirectory()) file = path.join(dir, "index.html");
   res.writeHead(200, { "content-type": types[path.extname(file)] ?? "application/octet-stream" });
   createReadStream(file).pipe(res);
-}).listen(Number(process.env.PORT ?? 8081), () => console.log("app preview ready"));
+}).listen(Number(process.env.APP_PORT ?? 8081), () => console.log("app preview ready"));
