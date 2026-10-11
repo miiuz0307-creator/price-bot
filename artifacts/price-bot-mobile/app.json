@@ -1,38 +1,51 @@
 {
   "expo": {
-    "name": "Price Bot Mobile",
+    "name": "מחירון",
     "slug": "price-bot-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "price-bot-mobile",
+    "scheme": "pricebot",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/images/icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#F8F7F2"
-    },
+    "backgroundColor": "#0A1311",
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "bundleIdentifier": "app.pricebot.mobile"
     },
-    "android": {},
+    "android": {
+      "package": "app.pricebot.mobile",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-foreground.png",
+        "backgroundColor": "#1B3834"
+      },
+      "edgeToEdgeEnabled": true,
+      "permissions": ["android.permission.POST_NOTIFICATIONS", "android.permission.USE_BIOMETRIC"]
+    },
     "web": {
-      "favicon": "./assets/images/icon.png"
+      "favicon": "./assets/images/icon.png",
+      "name": "מחירון",
+      "lang": "he",
+      "dir": "rtl",
+      "backgroundColor": "#0A1311",
+      "themeColor": "#0A1311"
     },
     "plugins": [
-      [
-        "expo-router",
-        {
-          "origin": "https://replit.com/"
-        }
-      ],
+      "expo-router",
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-secure-store",
+      ["expo-local-authentication", { "faceIDPermission": "כניסה מהירה למחירון עם Face ID" }],
+      ["expo-notifications", { "icon": "./assets/images/notification-icon.png", "color": "#3DDC97" }],
+      ["expo-splash-screen", { "image": "./assets/images/splash-icon.png", "imageWidth": 140, "backgroundColor": "#0A1311", "resizeMode": "contain" }]
     ],
+    "extra": {
+      "apiUrl": "https://price-bot-production-2674.up.railway.app"
+    },
     "experiments": {
-      "typedRoutes": true,
-      "reactCompiler": true
+      "typedRoutes": false,
+      "reactCompiler": false
     }
   }
 }

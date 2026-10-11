@@ -7,10 +7,21 @@ name: CI
 #                  on main they must already be up to date.
 #   2. check     – typecheck, unit tests, production builds.
 #   3. docker    – builds the deployable image.
+#   4. android   – (commit message with [apk], or manual run) builds the phone app
+#                  APK and publishes it as a GitHub release.
+# Commit-message flags on work branches: [update-lockfile] refreshes pnpm-lock.yaml
+# after package.json changes; [update-snapshot] re-records bot replies;
+# [screenshots] captures website + mobile app screenshots.
 # A red ✗ on GitHub means "do not deploy this version".
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      apk:
+        description: Build the Android app (APK) and publish it as a release
+        type: boolean
+        default: true
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -51,7 +62,23 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - name: Install dependencies
+        run: |
+          if [ "$UPDATE_LOCKFILE" = "1" ]; then
+            scripts/ci/run.sh "pnpm install (lockfile update)" pnpm install --no-frozen-lockfile
+          else
+            scripts/ci/run.sh "pnpm install" pnpm install --frozen-lockfile
+          fi
+        env:
+          UPDATE_LOCKFILE: ${{ github.event_name == 'push' && github.ref != 'refs/heads/main' && contains(github.event.head_commit.message, '[update-lockfile]') && '1' || '' }}
+      - name: Expo package versions match the SDK
+        continue-on-error: true
+        working-directory: artifacts/price-bot-mobile
+        run: |
+          out="$(pnpm exec expo install --check 2>&1)" && echo "$out" || {
+            echo "$out"
+            echo "::warning title=Expo versions::$(echo "$out" | tail -n 25 | sed -e 's/\x1b\[[0-9;]*m//g' | awk 'BEGIN{ORS="%0A"} {print}')"
+          }
       - name: Regenerate API client and validators
         run: scripts/ci/run.sh "Codegen" pnpm --filter @workspace/api-spec exec orval --config ./orval.config.ts
       - name: Bot reply golden master
@@ -74,7 +101,7 @@ jobs:
             git config user.name "ci-bot"
             git config user.email "ci-bot@users.noreply.github.com"
             git add -A
-            git commit -m "chore: regenerate API client / snapshots [ci]"
+            git commit -m "chore: regenerate API client / snapshots / lockfile [ci]"
             git push
             echo "::notice title=Generated files committed::$(git log -1 --stat --format='%h' | tr '\n' ' ')"
           fi
@@ -150,7 +177,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --config.node-linker=hoisted
       - run: pnpm --filter @workspace/api-server run build && BASE_PATH=/ pnpm --filter @workspace/price-bot run build
       - name: Start server
         run: |
@@ -164,6 +191,14 @@ jobs:
           cp $GITHUB_WORKSPACE/scripts/ci/screenshots.mjs $RUNNER_TEMP/pw/
           cd $GITHUB_WORKSPACE && OUT_DIR=$GITHUB_WORKSPACE/docs/screenshots SCHEMES=light,dark \
             scripts/ci/run.sh "Screenshots" node $RUNNER_TEMP/pw/screenshots.mjs
+      - name: Mobile app screenshots (web build of the phone app)
+        run: |
+          cd artifacts/price-bot-mobile && EXPO_PUBLIC_API_URL= pnpm exec expo export --platform web --output-dir dist-web > $RUNNER_TEMP/expo-export.log 2>&1 || { tail -n 80 $RUNNER_TEMP/expo-export.log; echo "::error title=Expo web export failed::$(tail -n 40 $RUNNER_TEMP/expo-export.log | sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}')"; exit 1; }
+          cd $GITHUB_WORKSPACE
+          node scripts/ci/serve-app.mjs > $RUNNER_TEMP/app.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8081/ >/dev/null && break; sleep 1; done
+          cp scripts/ci/app-screenshots.mjs $RUNNER_TEMP/pw/
+          OUT_DIR=$GITHUB_WORKSPACE/docs/screenshots/app scripts/ci/run.sh "App screenshots" node $RUNNER_TEMP/pw/app-screenshots.mjs
       - name: Server log on failure
         if: failure()
         run: echo "::error title=Server log::$(tail -n 60 $RUNNER_TEMP/server.log | sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}')"
@@ -191,3 +226,82 @@ jobs:
           tags: price-bot:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  android:
+    # Phone app for direct install (no store): signed APK published as a GitHub release.
+    # Every build uses the same signing key, so a new APK installs over the old one.
+    if: (github.event_name == 'push' && contains(github.event.head_commit.message, '[apk]')) || (github.event_name == 'workflow_dispatch' && inputs.apk)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: check
+    permissions:
+      contents: write
+    env:
+      APP_VERSION_CODE: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: gradle-
+      # Flat node_modules: what React Native's Gradle build expects.
+      - run: scripts/ci/run.sh "pnpm install (hoisted)" pnpm install --frozen-lockfile --config.node-linker=hoisted
+      - name: Firebase config for push notifications (optional)
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            echo "$GOOGLE_SERVICES_JSON" > artifacts/price-bot-mobile/google-services.json
+            echo "GOOGLE_SERVICES_FILE=./google-services.json" >> "$GITHUB_ENV"
+            echo "::notice title=Push::Firebase config found – push notifications enabled in this build"
+          else
+            echo "::notice title=Push::No GOOGLE_SERVICES_JSON secret – app built without push notifications"
+          fi
+      - name: Generate native Android project
+        working-directory: artifacts/price-bot-mobile
+        run: CI=1 ../../scripts/ci/run.sh "expo prebuild" pnpm exec expo prebuild --platform android --no-install --clean
+      - name: Build signed APK
+        working-directory: artifacts/price-bot-mobile/android
+        run: |
+          ../../../scripts/ci/run.sh "Gradle assembleRelease" ./gradlew assembleRelease --no-daemon --stacktrace \
+            -PreactNativeArchitectures=arm64-v8a,armeabi-v7a \
+            -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/artifacts/price-bot-mobile/credentials/android.keystore \
+            -Pandroid.injected.signing.store.password=pricebot-sideload \
+            -Pandroid.injected.signing.key.alias=pricebot \
+            -Pandroid.injected.signing.key.password=pricebot-sideload
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="1.0.${{ github.run_number }}"
+          apk="$RUNNER_TEMP/mechiron-$version.apk"
+          cp artifacts/price-bot-mobile/android/app/build/outputs/apk/release/app-release.apk "$apk"
+          size=$(du -h "$apk" | cut -f1)
+          cat > $RUNNER_TEMP/notes.md <<NOTES
+          ## אפליקציית מחירון לאנדרואיד – גרסה $version
+
+          **התקנה:** פותחים את הקישור לקובץ \`mechiron-$version.apk\` מהטלפון (מחוברים ל־GitHub) ← הורדה ← פתיחה ← „התקנה”.
+          בפעם הראשונה הטלפון יבקש לאשר התקנה מהדפדפן („מקורות לא ידועים”) – מאשרים וחוזרים.
+          עדכון: מתקינים את הגרסה החדשה מעל הקיימת – הכניסה והנתונים נשמרים.
+
+          גודל: $size · נבנה מ־${{ github.sha }}
+          NOTES
+          sed -i 's/^          //' $RUNNER_TEMP/notes.md
+          gh release create "app-v$version" "$apk" --target "${{ github.sha }}" --title "מחירון לאנדרואיד $version" --notes-file $RUNNER_TEMP/notes.md --latest
+          echo "::notice title=APK ready::https://github.com/${{ github.repository }}/releases/tag/app-v$version"
