@@ -193,6 +193,11 @@ jobs:
           cp $GITHUB_WORKSPACE/scripts/ci/screenshots.mjs $RUNNER_TEMP/pw/
           cd $GITHUB_WORKSPACE && OUT_DIR=$GITHUB_WORKSPACE/docs/screenshots SCHEMES=light,dark \
             scripts/ci/run.sh "Screenshots" node $RUNNER_TEMP/pw/screenshots.mjs
+      - name: Paste-a-price probe (website scrolling)
+        continue-on-error: true
+        run: |
+          cp scripts/ci/paste-probe.mjs $RUNNER_TEMP/pw/
+          OUT_DIR=$GITHUB_WORKSPACE/docs/screenshots node $RUNNER_TEMP/pw/paste-probe.mjs
       - name: Mobile app screenshots (web build of the phone app)
         run: |
           cd artifacts/price-bot-mobile && EXPO_PUBLIC_API_URL= pnpm exec expo export --platform web --output-dir dist-web > $RUNNER_TEMP/expo-export.log 2>&1 || { tail -n 80 $RUNNER_TEMP/expo-export.log; echo "::error title=Expo web export failed::$(tail -n 40 $RUNNER_TEMP/expo-export.log | sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}')"; exit 1; }
