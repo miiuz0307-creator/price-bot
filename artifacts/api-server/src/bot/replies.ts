@@ -138,6 +138,7 @@ export function formatProductResponse(product: typeof priceBotProducts.$inferSel
     header,
     "",
     `🗺️ *${product.name}*`,
+    product.subtitle ? `*${product.subtitle}*` : undefined,
     "",
     product.distance && `🛤️ *מרחק משוער -* ${product.distance}`,
     product.duration && `⌚️ *זמן משוער -* ${product.duration}`,
@@ -146,6 +147,22 @@ export function formatProductResponse(product: typeof priceBotProducts.$inferSel
     ...pricingLines(product.priceMatrix),
     "",
     product.waitTime && `⏳ *המתנה בצדדים -* ${product.waitTime}`,
+    // More price blocks of the same route (e.g. other neighborhoods), as entered by a manager.
+    ...(product.sections ?? []).flatMap((section) => [
+      "",
+      "----------------------",
+      "",
+      `🗺️ *${section.title}*`,
+      section.subtitle ? `*${section.subtitle}*` : undefined,
+      "",
+      section.distance && `🛤️ *מרחק משוער -* ${section.distance}`,
+      section.duration && `⌚️ *זמן משוער -* ${section.duration}`,
+      section.level && `🧾 *סוג מחירון -* ${section.level}`,
+      "",
+      ...pricingLines(section.priceMatrix.length >= 8 ? section.priceMatrix : Array(8).fill(section.priceMatrix[0])),
+      "",
+      section.waitTime && `⏳ *המתנה בצדדים -* ${section.waitTime}`,
+    ]),
     ...(showJerusalemRemoteNeighborhoods
       ? [
         "",
@@ -159,6 +176,7 @@ export function formatProductResponse(product: typeof priceBotProducts.$inferSel
         `⏳ *המתנה בצדדים -* ${product.waitTime}`,
       ]
       : []),
+    ...(product.notes ? ["", `📝 *הערות -* ${product.notes}`] : []),
     "",
     credit,
   ].filter((line): line is string => typeof line === "string").join("\n");

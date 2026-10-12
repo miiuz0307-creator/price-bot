@@ -87,6 +87,22 @@ import { audit } from "../services/audit";
 
 const router: IRouter = Router();
 
+/** Extra price blocks: trimmed text, 8 positive prices (or one), at most 6 blocks. */
+function cleanSections(sections: { title: string; subtitle?: string; distance?: string; duration?: string; level?: string; priceMatrix: number[]; waitTime?: string }[] | undefined) {
+  return (sections ?? [])
+    .filter((section) => section.title?.trim() && section.priceMatrix?.length && section.priceMatrix.every((price) => Number.isFinite(price) && price > 0))
+    .slice(0, 6)
+    .map((section) => ({
+      title: section.title.trim(),
+      ...(section.subtitle?.trim() ? { subtitle: section.subtitle.trim() } : {}),
+      ...(section.distance?.trim() ? { distance: section.distance.trim() } : {}),
+      ...(section.duration?.trim() ? { duration: section.duration.trim() } : {}),
+      ...(section.level?.trim() ? { level: section.level.trim() } : {}),
+      priceMatrix: section.priceMatrix.length >= 8 ? section.priceMatrix.slice(0, 8) : [section.priceMatrix[0]],
+      ...(section.waitTime?.trim() ? { waitTime: section.waitTime.trim() } : {}),
+    }));
+}
+
 router.get("/products", async (_req, res, next) => {
   try {
     const rows = await db.select().from(priceBotProducts).orderBy(priceBotProducts.name);
@@ -112,6 +128,9 @@ router.post("/products", requirePermission("catalog.edit"), async (req, res, nex
         priceMatrix: data.priceMatrix ?? [data.price],
         waitTime: data.waitTime ?? "",
         active: data.active ?? true,
+        subtitle: data.subtitle?.trim() ?? "",
+        notes: data.notes?.trim() ?? "",
+        sections: cleanSections(data.sections),
       })
       .returning();
     void audit(req, "product.create", { type: "product", id: row.id }, { label: row.name, priceMatrix: row.priceMatrix });
@@ -143,6 +162,9 @@ router.patch("/products/:id", requirePermission("catalog.edit"), async (req, res
         priceMatrix: data.priceMatrix ?? current.priceMatrix,
         waitTime: data.waitTime ?? current.waitTime,
         active: data.active ?? current.active,
+        subtitle: data.subtitle === undefined ? current.subtitle : data.subtitle.trim(),
+        notes: data.notes === undefined ? current.notes : data.notes.trim(),
+        sections: data.sections === undefined ? current.sections : cleanSections(data.sections),
         updatedAt: new Date(),
       })
       .where(eq(priceBotProducts.id, id))

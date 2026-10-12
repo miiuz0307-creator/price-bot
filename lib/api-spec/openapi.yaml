@@ -779,8 +779,14 @@ components:
         - status
     Product:
       type: object
-      required: [id, name, price, currency, aliases, active, updatedAt, distance, duration, level, priceMatrix, waitTime]
+      required: [subtitle, notes, sections, id, name, price, currency, aliases, active, updatedAt, distance, duration, level, priceMatrix, waitTime]
       properties:
+        subtitle: { type: string }
+        notes: { type: string }
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductSection"
         id: { type: integer }
         name: { type: string }
         price: { type: number }
@@ -797,10 +803,29 @@ components:
           items: { type: string }
         active: { type: boolean }
         updatedAt: { type: string }
+    ProductSection:
+      type: object
+      required: [title, priceMatrix]
+      properties:
+        title: { type: string }
+        subtitle: { type: string }
+        distance: { type: string }
+        duration: { type: string }
+        level: { type: string }
+        priceMatrix:
+          type: array
+          items: { type: number }
+        waitTime: { type: string }
     ProductInput:
       type: object
       required: [name, price]
       properties:
+        subtitle: { type: string }
+        notes: { type: string }
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductSection"
         name: { type: string, minLength: 1 }
         price: { type: number, minimum: 0 }
         currency: { type: string, default: ILS }
@@ -818,6 +843,12 @@ components:
     ProductUpdate:
       type: object
       properties:
+        subtitle: { type: string }
+        notes: { type: string }
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductSection"
         name: { type: string, minLength: 1 }
         price: { type: number, minimum: 0 }
         currency: { type: string }

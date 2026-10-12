@@ -99,6 +99,9 @@ export function productDto(row: typeof priceBotProducts.$inferSelect) {
     waitTime: row.waitTime,
     active: row.active,
     updatedAt: row.updatedAt.toISOString(),
+    subtitle: row.subtitle,
+    notes: row.notes,
+    sections: row.sections,
   };
 }
 

@@ -186,6 +186,14 @@ CREATE TABLE IF NOT EXISTS price_bot_push_devices (
 CREATE INDEX IF NOT EXISTS price_bot_push_devices_admin_idx ON price_bot_push_devices (admin_id);
 `,
   },
+  {
+    id: "0003_product_sections",
+    sql: `
+ALTER TABLE price_bot_products ADD COLUMN IF NOT EXISTS subtitle text NOT NULL DEFAULT '';
+ALTER TABLE price_bot_products ADD COLUMN IF NOT EXISTS notes text NOT NULL DEFAULT '';
+ALTER TABLE price_bot_products ADD COLUMN IF NOT EXISTS sections jsonb NOT NULL DEFAULT '[]'::jsonb;
+`,
+  },
 ];
 
 /** Applies pending migrations once, under an advisory lock (safe with several instances). */

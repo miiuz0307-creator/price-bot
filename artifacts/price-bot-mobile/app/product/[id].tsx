@@ -64,6 +64,7 @@ export default function ProductScreen() {
 
       <View style={{ gap: 6 }}>
         <Txt variant="h1">{product.name}</Txt>
+        {product.subtitle ? <Txt variant="bodySemi" color={c.mint}>{product.subtitle}</Txt> : null}
         <Txt variant="body" color={c.muted} style={{ fontSize: 14 }}>
           {[product.distance, product.duration, product.level || 'מחירון רגיל'].filter(Boolean).join(' · ')}
         </Txt>
@@ -81,24 +82,27 @@ export default function ProductScreen() {
         </Card>
       ))}
 
-      <Card style={{ padding: 0, overflow: 'hidden' }}>
-        <Row style={{ paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.lineSoft }} gap={0}>
-          <Txt variant="caption" color={c.muted} style={{ flex: 1.4 }}>סוג רכב</Txt>
-          <Txt variant="caption" color={c.muted} style={{ flex: 1 }}>צד אחד</Txt>
-          <Txt variant="caption" color={c.muted} style={{ flex: 1 }}>הלוך ושוב</Txt>
-        </Row>
-        {vehicles.map((vehicle, index) => (
-          <Row key={vehicle.key} gap={0} style={{ paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: index < 3 ? 1 : 0, borderBottomColor: c.lineSoft }}>
-            <Txt variant="bodyMedium" style={{ flex: 1.4 }}>{vehicle.label}</Txt>
-            <Txt variant="num" color={index === 0 ? c.mint : c.text} style={{ flex: 1 }}>{shekel(matrixPrice(product, index))}</Txt>
-            <Txt variant="num" style={{ flex: 1, fontSize: 16 }}>{hasFullMatrix(product) ? shekel(matrixPrice(product, index, true)) : '—'}</Txt>
-          </Row>
-        ))}
-      </Card>
+      {product.sections.length ? <Txt variant="h3">{product.subtitle || 'מחירון'}</Txt> : null}
+      <PriceTable matrix={product} />
       {!hasFullMatrix(product) ? (
         <Txt variant="caption" color={c.muted}>יש למסלול מחיר אחד — הבוט מציג אותו לכל סוגי הרכב.</Txt>
       ) : null}
 
+      {product.sections.map((section, index) => (
+        <View key={`${section.title}-${index}`} style={{ gap: 8 }}>
+          <View style={{ gap: 2 }}>
+            <Txt variant="h3">{section.subtitle || section.title}</Txt>
+            <Txt variant="caption" color={c.muted}>{[section.subtitle ? section.title : null, section.distance, section.duration, section.waitTime ? `המתנה ${section.waitTime}` : null].filter(Boolean).join(' · ')}</Txt>
+          </View>
+          <PriceTable matrix={{ price: section.priceMatrix[0], priceMatrix: section.priceMatrix }} />
+        </View>
+      ))}
+      {product.notes ? (
+        <Card style={{ flexDirection: 'row', gap: 10, padding: 14 }}>
+          <Icon name="file-text" size={18} color={c.muted} />
+          <Txt variant="label" color={c.muted} style={{ flex: 1, lineHeight: 20 }}>{product.notes}</Txt>
+        </Card>
+      ) : null}
       {product.aliases.length || product.waitTime ? (
         <View style={{ gap: 8 }}>
           <Txt variant="label" color={c.muted}>הבוט מזהה גם</Txt>
@@ -118,5 +122,25 @@ export default function ProductScreen() {
       </Card>
       <Txt variant="caption" color={c.faint} center>עודכן {new Date(product.updatedAt).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })}</Txt>
     </Screen>
+  );
+}
+
+function PriceTable({ matrix }: { matrix: { price: number; priceMatrix: number[] } }) {
+  const { c } = useTheme();
+  return (
+    <Card style={{ padding: 0, overflow: 'hidden' }}>
+        <Row style={{ paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.lineSoft }} gap={0}>
+          <Txt variant="caption" color={c.muted} style={{ flex: 1.4 }}>סוג רכב</Txt>
+          <Txt variant="caption" color={c.muted} style={{ flex: 1 }}>צד אחד</Txt>
+          <Txt variant="caption" color={c.muted} style={{ flex: 1 }}>הלוך ושוב</Txt>
+        </Row>
+        {vehicles.map((vehicle, index) => (
+          <Row key={vehicle.key} gap={0} style={{ paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: index < 3 ? 1 : 0, borderBottomColor: c.lineSoft }}>
+            <Txt variant="bodyMedium" style={{ flex: 1.4 }}>{vehicle.label}</Txt>
+            <Txt variant="num" color={index === 0 ? c.mint : c.text} style={{ flex: 1 }}>{shekel(matrixPrice(matrix, index))}</Txt>
+            <Txt variant="num" style={{ flex: 1, fontSize: 16 }}>{hasFullMatrix(matrix) ? shekel(matrixPrice(matrix, index, true)) : '—'}</Txt>
+          </Row>
+        ))}
+      </Card>
   );
 }

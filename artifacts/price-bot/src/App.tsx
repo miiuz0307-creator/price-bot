@@ -360,8 +360,8 @@ function formatMoney(value: number, currency: string) {
   return currency === 'ILS' ? `₪${amount}` : `${amount} ${currency}`;
 }
 
-type ProductForm = { name: string; price: string; currency: string; aliases: string; active: boolean; matrix: string[]; distance: string; duration: string; level: string; waitTime: string };
-const blankProduct: ProductForm = { name: '', price: '', currency: 'ILS', aliases: '', active: true, matrix: Array(8).fill(''), distance: '', duration: '', level: '', waitTime: '' };
+type ProductForm = { name: string; price: string; currency: string; aliases: string; active: boolean; matrix: string[]; distance: string; duration: string; level: string; waitTime: string; subtitle: string; notes: string; sections: Product['sections'] };
+const blankProduct: ProductForm = { name: '', price: '', currency: 'ILS', aliases: '', active: true, matrix: Array(8).fill(''), distance: '', duration: '', level: '', waitTime: '', subtitle: '', notes: '', sections: [] };
 // Order of Product.priceMatrix, as the bot prints it.
 const matrixLabels = ["4 מק׳", "4 מק׳ · צדדים", "6 מק׳ קטן", "6 קטן · צדדים", "6 מק׳ מרווח", "6 מרווח · צדדים", "7 מק׳ (סיינה)", "7 מק׳ · צדדים"];
 
@@ -379,28 +379,57 @@ function normalizedProductName(value: string) {
 }
 
 function parsePastedPriceMessage(text: string) {
+  // The automatic Jerusalem "neighborhood additions" block is added by the bot itself.
   const baseSection = text.split(/תוספת שכונות/u)[0] || text;
   const clean = (value: string | undefined) => (value || '').replace(/[*_`]/g, '').trim();
-  const route = clean(baseSection.match(/🗺️\s*\*?([^\n*]+)\*?/u)?.[1]).replace('↔', '⇔');
-  const prices = [...baseSection.matchAll(/₪\s*([\d,.]+)/gu)]
-    .map((match) => Number(match[1].replace(/,/g, '')))
-    .filter((value) => Number.isFinite(value));
-  if (!route) throw new Error('לא מצאתי בהודעה שם מסלול או אזור בשורה שמתחילה ב־🗺️.');
-  if (prices.length < 8) throw new Error('לא מצאתי שמונה מחירים: 4 מקומות, 6 קטן, 6 מרווח ו־7 מקומות כולל צדדים.');
-  const field = (label: string) => clean(baseSection.match(new RegExp(`${label}\\s*-\\s*\\*?\\s*([^\\n]+)`, 'u'))?.[1]);
+  const blocks = baseSection.split(/(?=🗺️)/u).filter((block) => block.includes('🗺️'));
+  const parseBlock = (block: string) => {
+    const lines = block.split('\n');
+    const titleIndex = lines.findIndex((line) => line.includes('🗺️'));
+    const next = (lines[titleIndex + 1] || '').trim();
+    const field = (label: string) => clean(block.match(new RegExp(`${label}\\s*-\\s*\\*?\\s*([^\\n]+)`, 'u'))?.[1]);
+    return {
+      title: clean(block.match(/🗺️\s*\*?([^\n*]+)\*?/u)?.[1]).replace('↔', '⇔'),
+      // A bold line right under the route name, e.g. "*רמת החייל*".
+      subtitle: /^\*[^*\n]+\*$/u.test(next) ? clean(next) : '',
+      prices: [...block.matchAll(/₪\s*([\d,.]+)/gu)].map((match) => Number(match[1].replace(/,/g, ''))).filter((value) => Number.isFinite(value) && value > 0),
+      distance: field('מרחק משוער'),
+      duration: field('זמן משוער'),
+      level: field('סוג מחירון'),
+      waitTime: field('המתנה בצדדים'),
+    };
+  };
+  const [main, ...rest] = blocks.map(parseBlock);
+  if (!main?.title) throw new Error('לא מצאתי בהודעה שם מסלול או אזור בשורה שמתחילה ב־🗺️.');
+  if (main.prices.length < 8) throw new Error('לא מצאתי שמונה מחירים: 4 מקומות, 6 קטן, 6 מרווח ו־7 מקומות כולל צדדים.');
+  // "<route> - 1", "<route> - 2": the route itself is the product, the rest are extra price blocks.
+  const name = rest.length && /\s-\s*1$/u.test(main.title) ? main.title.replace(/\s*-\s*1$/u, '').trim() : main.title;
+  const notesMatch = text.match(/📝\s*\*?\s*הערות\s*-\s*\*?\s*([^\n]*)((?:\n[^\n]*)*)/u);
+  const notes = notesMatch ? [clean(notesMatch[1]), ...notesMatch[2].split('\n').map((line) => line.trim()).filter((line) => line && !/^(פותח על ידי|🤖|-{3,})/u.test(line))].filter(Boolean).join('\n') : '';
   const aliases = [...text.matchAll(/(?:לא מצאתי תשובה\s*ל|תיקנתי ל)\s*:\s*([^\n]+)/gu)]
     .map((match) => clean(match[1]))
     .filter(Boolean);
   return {
-    name: route,
-    price: prices[0],
+    name,
+    price: main.prices[0],
     currency: 'ILS',
     aliases: [...new Set(aliases)],
-    distance: field('מרחק משוער'),
-    duration: field('זמן משוער'),
-    level: field('סוג מחירון'),
-    priceMatrix: prices.slice(0, 8),
-    waitTime: field('המתנה בצדדים'),
+    distance: main.distance,
+    duration: main.duration,
+    level: main.level,
+    priceMatrix: main.prices.slice(0, 8),
+    waitTime: main.waitTime,
+    subtitle: main.subtitle,
+    notes,
+    sections: rest.filter((block) => block.title && block.prices.length).map((block) => ({
+      title: block.title,
+      subtitle: block.subtitle,
+      distance: block.distance,
+      duration: block.duration,
+      level: block.level,
+      priceMatrix: block.prices.length >= 8 ? block.prices.slice(0, 8) : [block.prices[0]],
+      waitTime: block.waitTime,
+    })),
     active: true,
   };
 }
@@ -430,7 +459,7 @@ function ProductsPage() {
   const openEdit = (product: Product) => {
     setEditing(product);
     const matrix = Array.from({ length: 8 }, (_, index) => product.priceMatrix[index] ? String(product.priceMatrix[index]) : index === 0 ? String(product.price) : '');
-    setForm({ name: product.name, price: String(product.price), currency: product.currency, aliases: product.aliases.join(', '), active: product.active, matrix, distance: product.distance, duration: product.duration, level: product.level, waitTime: product.waitTime });
+    setForm({ name: product.name, price: String(product.price), currency: product.currency, aliases: product.aliases.join(', '), active: product.active, matrix, distance: product.distance, duration: product.duration, level: product.level, waitTime: product.waitTime, subtitle: product.subtitle, notes: product.notes, sections: product.sections });
     setFeedback(null);
     setModal(true);
   };
@@ -444,7 +473,8 @@ function ProductsPage() {
     if (form.matrix.some((value) => value.trim() !== '' && (!Number.isFinite(Number(value)) || Number(value) <= 0))) { setFeedback('כל המחירים חייבים להיות מספרים חיוביים.'); return; }
     const base = Number(form.matrix[0] || form.price);
     const data = { name: form.name.trim(), price: base, currency: form.currency.trim() || 'ILS', aliases: form.aliases.split(',').map((alias) => alias.trim()).filter(Boolean), active: form.active,
-      priceMatrix: filled === 8 ? matrix : [base], distance: form.distance.trim(), duration: form.duration.trim(), level: form.level.trim(), waitTime: form.waitTime.trim() };
+      priceMatrix: filled === 8 ? matrix : [base], distance: form.distance.trim(), duration: form.duration.trim(), level: form.level.trim(), waitTime: form.waitTime.trim(),
+      subtitle: form.subtitle.trim(), notes: form.notes.trim(), sections: form.sections };
     if (!data.name || Number.isNaN(data.price) || data.price < 0) { setFeedback('מלאו שם ומחיר תקינים לפני שמירה.'); return; }
     const onSuccess = () => { client.invalidateQueries({ queryKey: getListProductsQueryKey() }); client.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); setModal(false); setFeedback('המוצר נשמר בהצלחה.'); };
     if (editing) update.mutate({ id: editing.id, data }, { onSuccess, onError: (error) => setFeedback(getErrorMessage(error)) }); else create.mutate({ data }, { onSuccess, onError: (error) => setFeedback(getErrorMessage(error)) });
@@ -499,7 +529,7 @@ function ProductsPage() {
     {feedback && <div className="mb-5 flex items-center justify-between rounded-xl bg-secondary px-4 py-3 text-sm font-bold" data-testid="status-products-feedback"><span>{feedback}</span><button onClick={() => setFeedback(null)} aria-label="סגירת הודעה" data-testid="button-dismiss-products-feedback"><X className="size-4" /></button></div>}
     <div className="mb-5 flex flex-col gap-3 sm:flex-row"><div className="relative flex-1"><Search className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="חיפוש לפי מוצר או כינוי…" className="input-base w-full pr-10" data-testid="input-search-products" /></div><div className="flex rounded-lg border border-border bg-card p-1">{[['all', 'הכל'], ['active', 'פעילים'], ['paused', 'מושהים']].map(([value, label]) => <button type="button" key={value} onClick={() => setFilter(value as typeof filter)} className={`rounded-md px-3 py-2 text-xs font-bold ${filter === value ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}`} data-testid={`button-filter-products-${value}`}>{label}</button>)}</div></div>
     {query.isLoading ? <div className="grid gap-3">{[1, 2, 3].map((item) => <Skeleton key={item} className="h-[84px]" />)}</div> : query.isError ? <QueryError message={getErrorMessage(query.error)} onRetry={() => query.refetch()} /> : visible.length === 0 ? <EmptyState icon={PackageOpen} title={search || filter !== 'all' ? 'לא נמצאו מוצרים' : 'המחירון עדיין ריק'} description={search || filter !== 'all' ? 'נסו לשנות את החיפוש או הסינון.' : 'הוסיפו את המוצר הראשון כדי שהבוט יוכל להתחיל לענות.'} action={!search && filter === 'all' ? <Button onClick={openCreate} data-testid="button-empty-add-product"><Plus className="size-4" /> הוספת מוצר</Button> : undefined} /> : <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm"><div className="hidden grid-cols-[1.6fr_1fr_.7fr_120px_180px] gap-4 border-b border-border bg-secondary/45 px-5 py-3 text-xs font-bold text-muted-foreground md:grid"><span>מוצר</span><span>כינויים</span><span>מחיר</span><span>עודכן</span><span>מצב</span></div><div className="divide-y divide-border">{visible.map((product) => <ProductRow key={product.id} product={product} onEdit={openEdit} onToggle={toggle} onDelete={deleteProduct} readOnly={!canEdit} />)}</div></div>}
-    {modal && <Modal title={editing ? 'עריכת מוצר' : 'מוצר חדש'} description="הבוט משתמש בשם ובכינויים כדי לזהות את השאלה." onClose={() => setModal(false)}><form onSubmit={submit} className="grid gap-4"><Field label="שם המוצר"><input autoFocus required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="input-base" placeholder="למשל: בני ברק ⇔ ירושלים" data-testid="input-product-name" /></Field><fieldset className="grid gap-2"><legend className="mb-1 text-sm font-bold">מחירים לפי סוג רכב (₪)</legend><div className="grid grid-cols-2 gap-2">{matrixLabels.map((label, index) => <label key={label} className="grid gap-1 text-xs font-bold text-muted-foreground"><span>{label}</span><input required={index === 0} type="number" min="0" step="1" inputMode="numeric" value={form.matrix[index]} onChange={(event) => setForm({ ...form, matrix: form.matrix.map((value, cell) => cell === index ? event.target.value : value) })} className="input-base font-mono text-foreground" dir="ltr" placeholder={index === 0 ? '160' : ''} data-testid={index === 0 ? 'input-product-price' : `input-product-matrix-${index}`} /></label>)}</div><p className="text-xs text-muted-foreground">מלאו את כל השמונה, או רק „4 מק׳” — ואז הבוט יציג אותו מחיר לכל סוגי הרכב.</p></fieldset><div className="grid grid-cols-2 gap-2"><Field label="מרחק משוער"><input value={form.distance} onChange={(event) => setForm({ ...form, distance: event.target.value })} className="input-base" placeholder="62 ק״מ" /></Field><Field label="זמן משוער"><input value={form.duration} onChange={(event) => setForm({ ...form, duration: event.target.value })} className="input-base" placeholder="50 דק׳" /></Field><Field label="המתנה בצדדים"><input value={form.waitTime} onChange={(event) => setForm({ ...form, waitTime: event.target.value })} className="input-base" placeholder="₪40 לשעה" /></Field><Field label="סוג מחירון"><input value={form.level} onChange={(event) => setForm({ ...form, level: event.target.value })} className="input-base" placeholder="מחירון רגיל" /></Field></div><Field label="כינויים" hint="הפרידו בין כינויים בפסיק"><input value={form.aliases} onChange={(event) => setForm({ ...form, aliases: event.target.value })} className="input-base" placeholder="בב ים, ירושלים בני ברק" data-testid="input-product-aliases" /></Field><label className="flex cursor-pointer items-center justify-between rounded-xl bg-secondary/60 p-3 text-sm font-bold"><span>המוצר זמין לבוט</span><input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} className="size-4 accent-[hsl(var(--primary))]" data-testid="input-product-active" /></label>{feedback && <p className="text-sm font-bold text-destructive" data-testid="status-product-form">{feedback}</p>}<div className="mt-2 flex gap-2"><Button type="submit" disabled={create.isPending || update.isPending} className="flex-1" data-testid="button-save-product"><Check className="size-4" /> {create.isPending || update.isPending ? 'שומר…' : 'שמירת מוצר'}</Button><Button type="button" variant="secondary" onClick={() => setModal(false)} data-testid="button-cancel-product">ביטול</Button></div></form></Modal>}
+    {modal && <Modal title={editing ? 'עריכת מוצר' : 'מוצר חדש'} description="הבוט משתמש בשם ובכינויים כדי לזהות את השאלה." onClose={() => setModal(false)}><form onSubmit={submit} className="grid gap-4"><Field label="שם המוצר"><input autoFocus required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="input-base" placeholder="למשל: בני ברק ⇔ ירושלים" data-testid="input-product-name" /></Field><fieldset className="grid gap-2"><legend className="mb-1 text-sm font-bold">מחירים לפי סוג רכב (₪)</legend><div className="grid grid-cols-2 gap-2">{matrixLabels.map((label, index) => <label key={label} className="grid gap-1 text-xs font-bold text-muted-foreground"><span>{label}</span><input required={index === 0} type="number" min="0" step="1" inputMode="numeric" value={form.matrix[index]} onChange={(event) => setForm({ ...form, matrix: form.matrix.map((value, cell) => cell === index ? event.target.value : value) })} className="input-base font-mono text-foreground" dir="ltr" placeholder={index === 0 ? '160' : ''} data-testid={index === 0 ? 'input-product-price' : `input-product-matrix-${index}`} /></label>)}</div><p className="text-xs text-muted-foreground">מלאו את כל השמונה, או רק „4 מק׳” — ואז הבוט יציג אותו מחיר לכל סוגי הרכב.</p></fieldset><div className="grid grid-cols-2 gap-2"><Field label="מרחק משוער"><input value={form.distance} onChange={(event) => setForm({ ...form, distance: event.target.value })} className="input-base" placeholder="62 ק״מ" /></Field><Field label="זמן משוער"><input value={form.duration} onChange={(event) => setForm({ ...form, duration: event.target.value })} className="input-base" placeholder="50 דק׳" /></Field><Field label="המתנה בצדדים"><input value={form.waitTime} onChange={(event) => setForm({ ...form, waitTime: event.target.value })} className="input-base" placeholder="₪40 לשעה" /></Field><Field label="סוג מחירון"><input value={form.level} onChange={(event) => setForm({ ...form, level: event.target.value })} className="input-base" placeholder="מחירון רגיל" /></Field></div><Field label="כינויים" hint="הפרידו בין כינויים בפסיק"><input value={form.aliases} onChange={(event) => setForm({ ...form, aliases: event.target.value })} className="input-base" placeholder="בב ים, ירושלים בני ברק" data-testid="input-product-aliases" /></Field><Field label="שורה מתחת לשם (לא חובה)"><input value={form.subtitle} onChange={(event) => setForm({ ...form, subtitle: event.target.value })} className="input-base" placeholder="רמת החייל" /></Field>{form.sections.length > 0 && <div className="grid gap-2 rounded-xl bg-secondary/60 p-3 text-sm"><span className="font-bold">בלוקים נוספים באותה תשובה</span>{form.sections.map((section, index) => <div key={index} className="flex items-center justify-between gap-2"><span>{section.title}{section.subtitle ? ` · ${section.subtitle}` : ''} · ₪{section.priceMatrix[0]}</span><Button type="button" variant="ghost" onClick={() => setForm({ ...form, sections: form.sections.filter((_, cell) => cell !== index) })}>הסרה</Button></div>)}<span className="text-xs text-muted-foreground">לשינוי מחירי הבלוקים — הדביקו שוב את הודעת המחיר המלאה.</span></div>}<Field label="הערות (בסוף התשובה)"><textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} className="input-base min-h-20" placeholder="המחיר משתנה לפי האיזור" /></Field><label className="flex cursor-pointer items-center justify-between rounded-xl bg-secondary/60 p-3 text-sm font-bold"><span>המוצר זמין לבוט</span><input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} className="size-4 accent-[hsl(var(--primary))]" data-testid="input-product-active" /></label>{feedback && <p className="text-sm font-bold text-destructive" data-testid="status-product-form">{feedback}</p>}<div className="mt-2 flex gap-2"><Button type="submit" disabled={create.isPending || update.isPending} className="flex-1" data-testid="button-save-product"><Check className="size-4" /> {create.isPending || update.isPending ? 'שומר…' : 'שמירת מוצר'}</Button><Button type="button" variant="secondary" onClick={() => setModal(false)} data-testid="button-cancel-product">ביטול</Button></div></form></Modal>}
     {pasteModal && <Modal title="הוספה מהודעת מחירון" description="הדביקו את כל ההודעה. המסלול, המחירים, המרחק, הזמן וההמתנה ייקלטו אוטומטית." onClose={() => setPasteModal(false)}><div className="grid gap-4"><Field label="הודעת המחירון"><textarea autoFocus value={pastedMessage} onChange={(event) => setPastedMessage(event.target.value)} className="input-base min-h-72 resize-y font-mono text-xs leading-6" placeholder="הדביקו כאן את הודעת המחירון…" data-testid="input-pasted-price-message" /></Field>{feedback && <p className="text-sm font-bold text-destructive" data-testid="status-pasted-price-message">{feedback}</p>}<div className="flex gap-2"><Button type="button" onClick={importPastedMessage} disabled={!pastedMessage.trim() || create.isPending || update.isPending} className="flex-1" data-testid="button-import-pasted-price"><ClipboardPaste className="size-4" /> {create.isPending || update.isPending ? 'מכניס למחירון…' : 'הכנסה למחירון'}</Button><Button type="button" variant="secondary" onClick={() => setPasteModal(false)}>ביטול</Button></div></div></Modal>}
   </div>;
 }

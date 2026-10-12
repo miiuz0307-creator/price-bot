@@ -26,7 +26,18 @@ export const priceBotProducts = pgTable("price_bot_products", {
   waitTime: text("wait_time").notNull().default(""),
   active: boolean("active").notNull().default(true),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  /** Line under the route name, e.g. "רמת החייל". */
+  subtitle: text("subtitle").notNull().default(""),
+  /** "📝 הערות" at the end of the bot's reply (may hold several lines). */
+  notes: text("notes").notNull().default(""),
+  /** More price blocks in the same reply, e.g. other neighborhoods of the same route. */
+  sections: jsonb("sections").$type<PriceSection[]>().notNull().default([]),
 });
+
+export type PriceSection = {
+  title: string; subtitle?: string; distance?: string; duration?: string; level?: string;
+  priceMatrix: number[]; waitTime?: string;
+};
 
 export const priceBotAdmins = pgTable("price_bot_admins", {
   id: serial("id").primaryKey(),

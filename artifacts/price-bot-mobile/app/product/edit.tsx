@@ -3,18 +3,18 @@ import { View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
-import { createProduct, deleteLookupRequest, deleteProduct, updateProduct, useListProducts, type ProductInput } from '@workspace/api-client-react';
+import { createProduct, deleteLookupRequest, deleteProduct, updateProduct, useListProducts, type Product, type ProductInput } from '@workspace/api-client-react';
 import { useToast } from '@/components/Toast';
 import { BackHeader, Button, Card, Field, Footer, Row, Screen, Toggle, Txt } from '@/components/ui';
 import { errorMessage } from '@/lib/api';
 import { confirm } from '@/lib/confirm';
-import { matrixLabels, parsePastedPriceMessage } from '@/lib/format';
+import { matrixLabels, parsePastedPriceMessage, searchKey } from '@/lib/format';
 import { useInvalidate } from '@/lib/queries';
 import { useSession } from '@/lib/session';
 import { useTheme } from '@/lib/theme';
 
-type Form = { name: string; matrix: string[]; distance: string; duration: string; level: string; waitTime: string; aliases: string; active: boolean };
-const blank: Form = { name: '', matrix: Array(8).fill(''), distance: '', duration: '', level: '', waitTime: '', aliases: '', active: true };
+type Form = { name: string; matrix: string[]; distance: string; duration: string; level: string; waitTime: string; aliases: string; active: boolean; subtitle: string; notes: string; sections: Product['sections'] };
+const blank: Form = { name: '', matrix: Array(8).fill(''), distance: '', duration: '', level: '', waitTime: '', aliases: '', active: true, subtitle: '', notes: '', sections: [] };
 
 export default function ProductEditScreen() {
   const { c } = useTheme();
@@ -35,6 +35,7 @@ export default function ProductEditScreen() {
         matrix: Array.from({ length: 8 }, (_, index) => (editing.priceMatrix[index] ? String(editing.priceMatrix[index]) : index === 0 ? String(editing.price) : '')),
         distance: editing.distance, duration: editing.duration, level: editing.level, waitTime: editing.waitTime,
         aliases: editing.aliases.join(', '), active: editing.active,
+        subtitle: editing.subtitle, notes: editing.notes, sections: editing.sections,
       });
       setReady(true);
     }
@@ -70,8 +71,12 @@ export default function ProductEditScreen() {
         aliases: [...new Set(form.aliases.split(/[,\n]/u).map((alias) => alias.trim()).filter(Boolean))],
         active: form.active, priceMatrix: filled === 8 ? form.matrix.map(Number) : [base],
         distance: form.distance.trim(), duration: form.duration.trim(), level: form.level.trim(), waitTime: form.waitTime.trim(),
+        subtitle: form.subtitle.trim(), notes: form.notes.trim(), sections: form.sections,
       };
       if (editing) return updateProduct(editing.id, data);
+      // Same route already in the catalog (e.g. pasting a new price message): update it, never duplicate.
+      const existing = products.data?.find((product) => searchKey(product.name) === searchKey(data.name));
+      if (existing) return updateProduct(existing.id, { ...data, aliases: data.aliases?.length ? data.aliases : existing.aliases });
       const created = await createProduct(data);
       if (params.requestId && can('lookups.manage')) await deleteLookupRequest(Number(params.requestId)).catch(() => undefined);
       return created;
@@ -102,8 +107,12 @@ export default function ProductEditScreen() {
       set({
         name: parsed.name, matrix: parsed.priceMatrix.map(String), distance: parsed.distance, duration: parsed.duration,
         level: parsed.level, waitTime: parsed.waitTime, aliases: [...new Set([...form.aliases.split(',').map((a) => a.trim()).filter(Boolean), ...parsed.aliases])].join(', '),
+        subtitle: parsed.subtitle, notes: parsed.notes, sections: parsed.sections,
       });
-      toast.show('המחירים מולאו מההודעה — בדקו ושמרו');
+      const existing = !editing && products.data?.find((product) => searchKey(product.name) === searchKey(parsed.name));
+      toast.show(existing
+        ? `„${existing.name}” כבר במחירון — שמירה תעדכן אותו`
+        : `המחירים מולאו מההודעה${parsed.sections.length ? ` (+${parsed.sections.length} בלוקים נוספים)` : ''} — בדקו ושמרו`);
     } catch (failure) {
       toast.show(failure instanceof Error ? failure.message : 'לא הצלחתי לקרוא את ההודעה', 'error');
     }
@@ -152,6 +161,23 @@ export default function ProductEditScreen() {
         <Field label="סוג מחירון" value={form.level} onChangeText={(level) => set({ level })} placeholder="מחירון רגיל" style={{ flex: 1 }} />
       </Row>
       <Field label="כינויים" hint="הפרידו בפסיק. הבוט מזהה את המסלול גם לפיהם." value={form.aliases} onChangeText={(aliases) => set({ aliases })} placeholder="בב ים, ירושלים בני ברק" />
+      <Field label="שורה מתחת לשם (לא חובה)" value={form.subtitle} onChangeText={(subtitle) => set({ subtitle })} placeholder="רמת החייל" />
+      {form.sections.length ? (
+        <Card style={{ gap: 10 }}>
+          <Txt variant="bodySemi">בלוקים נוספים באותה תשובה</Txt>
+          {form.sections.map((section, index) => (
+            <Row key={`${section.title}-${index}`} style={{ justifyContent: 'space-between' }}>
+              <View style={{ flex: 1 }}>
+                <Txt variant="bodyMedium">{section.title}</Txt>
+                <Txt variant="caption" color={c.muted}>{[section.subtitle, `4 מק׳ ₪${section.priceMatrix[0]}`].filter(Boolean).join(' · ')}</Txt>
+              </View>
+              <Button icon="trash-2" variant="ghost" size="md" accessibilityLabel={`הסרת ${section.title}`} onPress={() => set({ sections: form.sections.filter((_, cell) => cell !== index) })} />
+            </Row>
+          ))}
+          <Txt variant="caption" color={c.muted}>לשינוי המחירים של הבלוקים — הדביקו שוב את הודעת המחיר המלאה.</Txt>
+        </Card>
+      ) : null}
+      <Field label="הערות (בסוף התשובה)" value={form.notes} onChangeText={(notes) => set({ notes })} placeholder="המחיר משתנה לפי האיזור" multiline />
 
       <Card style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, borderRadius: 18 }}>
         <View style={{ flex: 1, gap: 2 }}>
