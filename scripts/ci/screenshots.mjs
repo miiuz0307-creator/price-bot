@@ -33,7 +33,7 @@ for (const scheme of schemes) {
     page.on("pageerror", (error) => problems.push(`${device}/${scheme}: page error: ${error.message}`));
     page.on("console", (message) => { if (message.type() === "error") problems.push(`${device}/${scheme}: console: ${message.text()}`); });
 
-    await page.goto(base, { waitUntil: "networkidle" });
+    await page.goto(base, { waitUntil: "load" });
     await page.screenshot({ path: `${out}/${scheme}-${device}-login.png`, fullPage: false });
     await page.getByTestId("button-login-pin").click();
     await page.getByTestId("input-login-identifier").fill("0504107826");
@@ -42,8 +42,8 @@ for (const scheme of schemes) {
     await page.waitForSelector("main >> text=חדר הבקרה", { timeout: 15_000 }).catch(() => problems.push(`${device}/${scheme}: dashboard did not load after login`));
 
     for (const [name, url] of pages) {
-      await page.goto(`${base}${url}`, { waitUntil: "networkidle" });
-      await page.waitForTimeout(400);
+      await page.goto(`${base}${url}`, { waitUntil: "load" });
+      await page.waitForTimeout(1500);
       // Horizontal scrolling on a phone is a layout bug.
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       if (overflow > 2) problems.push(`${device}/${scheme}: ${name} overflows horizontally by ${overflow}px`);

@@ -11,13 +11,14 @@ const report = [];
 for (const [device, viewport, mobile] of [["desktop", { width: 1440, height: 900 }, false], ["phone", { width: 390, height: 844 }, true]]) {
   const context = await browser.newContext({ viewport, isMobile: mobile, hasTouch: mobile, locale: "he-IL" });
   const page = await context.newPage();
-  await page.goto(base, { waitUntil: "networkidle" });
+  await page.goto(base, { waitUntil: "load" });
   await page.getByTestId("button-login-pin").click();
   await page.getByTestId("input-login-identifier").fill("0504107826");
   await page.getByTestId("input-login-code").fill("2468");
   await page.getByTestId("button-login-submit").click();
   await page.waitForTimeout(1500);
-  await page.goto(`${base}/products`, { waitUntil: "networkidle" });
+  await page.goto(`${base}/products`, { waitUntil: "load" });
+  await page.waitForTimeout(1500);
   const y = () => page.evaluate(() => Math.round(window.scrollY));
   report.push(`${device}: start scrollY=${await y()}`);
   await page.getByTestId("button-paste-product").click();

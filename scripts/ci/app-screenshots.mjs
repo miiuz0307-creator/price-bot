@@ -39,13 +39,13 @@ for (const scheme of (process.env.SCHEMES ?? "dark,light").split(",")) {
   page.on("pageerror", (error) => problems.push(`${scheme}: page error: ${error.message}`));
   page.on("console", (message) => { if (message.type() === "error" && !/favicon|401/.test(message.text())) problems.push(`${scheme}: console: ${message.text().slice(0, 300)}`); });
 
-  await page.goto(`${base}/login`, { waitUntil: "networkidle" });
+  await page.goto(`${base}/login`, { waitUntil: "load" });
   await page.waitForTimeout(800);
   await page.screenshot({ path: `${out}/${scheme}-login.png` });
 
   await page.evaluate((token) => localStorage.setItem("pricebot.session", token), login.token);
   for (const [name, url] of screens) {
-    await page.goto(`${base}${url}`, { waitUntil: "networkidle" });
+    await page.goto(`${base}${url}`, { waitUntil: "load" });
     await page.waitForTimeout(900);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     if (overflow > 2) problems.push(`${scheme}: ${name} overflows horizontally by ${overflow}px`);
