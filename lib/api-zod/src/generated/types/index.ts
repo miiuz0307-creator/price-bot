@@ -33,6 +33,7 @@ export * from './permission';
 export * from './pinLoginInput';
 export * from './product';
 export * from './productInput';
+export * from './productSection';
 export * from './productUpdate';
 export * from './pushDevice';
 export * from './pushDeviceInput';

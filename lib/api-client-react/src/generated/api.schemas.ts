@@ -67,7 +67,20 @@ export interface HealthStatus {
   status: string;
 }
 
+export interface ProductSection {
+  title: string;
+  subtitle?: string;
+  distance?: string;
+  duration?: string;
+  level?: string;
+  priceMatrix: number[];
+  waitTime?: string;
+}
+
 export interface Product {
+  subtitle: string;
+  notes: string;
+  sections: ProductSection[];
   id: number;
   name: string;
   price: number;
@@ -83,6 +96,9 @@ export interface Product {
 }
 
 export interface ProductInput {
+  subtitle?: string;
+  notes?: string;
+  sections?: ProductSection[];
   /** @minLength 1 */
   name: string;
   /** @minimum 0 */
@@ -98,6 +114,9 @@ export interface ProductInput {
 }
 
 export interface ProductUpdate {
+  subtitle?: string;
+  notes?: string;
+  sections?: ProductSection[];
   /** @minLength 1 */
   name?: string;
   /** @minimum 0 */

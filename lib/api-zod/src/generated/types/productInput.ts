@@ -5,8 +5,12 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ProductSection } from './productSection';
 
 export interface ProductInput {
+  subtitle?: string;
+  notes?: string;
+  sections?: ProductSection[];
   /** @minLength 1 */
   name: string;
   /** @minimum 0 */

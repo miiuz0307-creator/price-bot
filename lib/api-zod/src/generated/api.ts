@@ -21,6 +21,17 @@ export const HealthCheckResponse = zod.object({
  * @summary List products and prices
  */
 export const ListProductsResponseItem = zod.object({
+  "subtitle": zod.string(),
+  "notes": zod.string(),
+  "sections": zod.array(zod.object({
+  "title": zod.string(),
+  "subtitle": zod.string().optional(),
+  "distance": zod.string().optional(),
+  "duration": zod.string().optional(),
+  "level": zod.string().optional(),
+  "priceMatrix": zod.array(zod.number()),
+  "waitTime": zod.string().optional()
+})),
   "id": zod.int(),
   "name": zod.string(),
   "price": zod.number(),
@@ -47,6 +58,17 @@ export const createProductBodyCurrencyDefault = `ILS`;
 export const createProductBodyActiveDefault = true;
 
 export const CreateProductBody = zod.object({
+  "subtitle": zod.string().optional(),
+  "notes": zod.string().optional(),
+  "sections": zod.array(zod.object({
+  "title": zod.string(),
+  "subtitle": zod.string().optional(),
+  "distance": zod.string().optional(),
+  "duration": zod.string().optional(),
+  "level": zod.string().optional(),
+  "priceMatrix": zod.array(zod.number()),
+  "waitTime": zod.string().optional()
+})).optional(),
   "name": zod.string().min(1),
   "price": zod.number().min(createProductBodyPriceMin),
   "currency": zod.string().default(createProductBodyCurrencyDefault),
@@ -60,6 +82,17 @@ export const CreateProductBody = zod.object({
 })
 
 export const CreateProductResponse = zod.object({
+  "subtitle": zod.string(),
+  "notes": zod.string(),
+  "sections": zod.array(zod.object({
+  "title": zod.string(),
+  "subtitle": zod.string().optional(),
+  "distance": zod.string().optional(),
+  "duration": zod.string().optional(),
+  "level": zod.string().optional(),
+  "priceMatrix": zod.array(zod.number()),
+  "waitTime": zod.string().optional()
+})),
   "id": zod.int(),
   "name": zod.string(),
   "price": zod.number(),
@@ -88,6 +121,17 @@ export const updateProductBodyPriceMin = 0;
 
 
 export const UpdateProductBody = zod.object({
+  "subtitle": zod.string().optional(),
+  "notes": zod.string().optional(),
+  "sections": zod.array(zod.object({
+  "title": zod.string(),
+  "subtitle": zod.string().optional(),
+  "distance": zod.string().optional(),
+  "duration": zod.string().optional(),
+  "level": zod.string().optional(),
+  "priceMatrix": zod.array(zod.number()),
+  "waitTime": zod.string().optional()
+})).optional(),
   "name": zod.string().min(1).optional(),
   "price": zod.number().min(updateProductBodyPriceMin).optional(),
   "currency": zod.string().optional(),
@@ -101,6 +145,17 @@ export const UpdateProductBody = zod.object({
 })
 
 export const UpdateProductResponse = zod.object({
+  "subtitle": zod.string(),
+  "notes": zod.string(),
+  "sections": zod.array(zod.object({
+  "title": zod.string(),
+  "subtitle": zod.string().optional(),
+  "distance": zod.string().optional(),
+  "duration": zod.string().optional(),
+  "level": zod.string().optional(),
+  "priceMatrix": zod.array(zod.number()),
+  "waitTime": zod.string().optional()
+})),
   "id": zod.int(),
   "name": zod.string(),
   "price": zod.number(),
@@ -916,6 +971,17 @@ export const ApproveLookupEstimateParams = zod.object({
 })
 
 export const ApproveLookupEstimateResponse = zod.object({
+  "subtitle": zod.string(),
+  "notes": zod.string(),
+  "sections": zod.array(zod.object({
+  "title": zod.string(),
+  "subtitle": zod.string().optional(),
+  "distance": zod.string().optional(),
+  "duration": zod.string().optional(),
+  "level": zod.string().optional(),
+  "priceMatrix": zod.array(zod.number()),
+  "waitTime": zod.string().optional()
+})),
   "id": zod.int(),
   "name": zod.string(),
   "price": zod.number(),
