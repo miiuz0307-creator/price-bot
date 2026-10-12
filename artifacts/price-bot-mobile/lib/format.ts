@@ -26,11 +26,11 @@ export function minutesLeft(iso: string, now = Date.now()) {
 }
 
 export function greeting(date = new Date()) {
-  const hour = date.getHours();
-  if (hour < 5) return 'לילה טוב,';
-  if (hour < 12) return 'בוקר טוב,';
-  if (hour < 17) return 'צהריים טובים,';
-  if (hour < 21) return 'ערב טוב,';
+  // Israel time, whatever the phone's own setting.
+  const hour = Number(new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hourCycle: 'h23', timeZone: 'Asia/Jerusalem' }).format(date));
+  if (hour >= 5 && hour < 12) return 'בוקר טוב,';
+  if (hour >= 12 && hour < 17) return 'צהריים טובים,';
+  if (hour >= 17 && hour < 21) return 'ערב טוב,';
   return 'לילה טוב,';
 }
 

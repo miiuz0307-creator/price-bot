@@ -96,6 +96,15 @@ import { useTheme } from '@/lib/theme';
 import { Link, Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import './index.css';
 
+/** Greeting by the time in Israel (not a fixed "good morning"). */
+function greeting(date = new Date()) {
+  const hour = Number(new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hourCycle: 'h23', timeZone: 'Asia/Jerusalem' }).format(date));
+  if (hour >= 5 && hour < 12) return 'בוקר טוב';
+  if (hour >= 12 && hour < 17) return 'צהריים טובים';
+  if (hour >= 17 && hour < 21) return 'ערב טוב';
+  return 'לילה טוב';
+}
+
 const queryClient = new QueryClient();
 
 const navItems = [
@@ -281,7 +290,7 @@ function Dashboard() {
   const isLoading = summaryQuery.isLoading || statusQuery.isLoading;
   return (
     <div className="animate-rise-in">
-      <PageHeader eyebrow="לוח בקרה / היום" title="בוקר טוב, זה חדר הבקרה שלך." description="מחירים מדויקים, לקוחות מחוברים, ופחות שאלות שחוזרות על עצמן." action={<Link href="/products" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-bold text-primary-foreground shadow-sm hover:brightness-95" data-testid="link-dashboard-products"><ShoppingBag className="size-4" /> ניהול מחירון <ArrowUpLeft className="size-4" /></Link>} />
+      <PageHeader eyebrow="לוח בקרה / היום" title={`${greeting()}, זה חדר הבקרה שלך.`} description="מחירים מדויקים, לקוחות מחוברים, ופחות שאלות שחוזרות על עצמן." action={<Link href="/products" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-bold text-primary-foreground shadow-sm hover:brightness-95" data-testid="link-dashboard-products"><ShoppingBag className="size-4" /> ניהול מחירון <ArrowUpLeft className="size-4" /></Link>} />
       {summaryQuery.isError ? <QueryError message={getErrorMessage(summaryQuery.error)} onRetry={() => summaryQuery.refetch()} /> : (
         <>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
