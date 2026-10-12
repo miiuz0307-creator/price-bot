@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect } from 'react';
+import { type ReactNode, useLayoutEffect } from 'react';
 import { AlertCircle, PackageOpen, RefreshCcw, X } from 'lucide-react';
 
 export function formatDate(value: string | null | undefined) {
@@ -126,7 +126,9 @@ export function Modal({
   onClose: () => void;
   children: ReactNode;
 }) {
-  useEffect(() => {
+  // Lock the page behind the dialog before anything inside it takes focus, so the
+  // page never moves while the dialog is open and returns to the same place after.
+  useLayoutEffect(() => {
     const scrollY = window.scrollY;
     const { body } = document;
     const previous = {

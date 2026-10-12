@@ -9,6 +9,7 @@ const message = readFileSync(path.resolve("scripts/ci/sample-price-message.txt")
 const browser = await chromium.launch();
 const report = [];
 for (const [device, viewport, mobile] of [["desktop", { width: 1440, height: 900 }, false], ["phone", { width: 390, height: 844 }, true]]) {
+ try {
   const context = await browser.newContext({ viewport, isMobile: mobile, hasTouch: mobile, locale: "he-IL" });
   const page = await context.newPage();
   await page.goto(base, { waitUntil: "load" });
@@ -17,6 +18,14 @@ for (const [device, viewport, mobile] of [["desktop", { width: 1440, height: 900
   await page.getByTestId("input-login-code").fill("2468");
   await page.getByTestId("button-login-submit").click();
   await page.waitForTimeout(1500);
+  if (device === "desktop") {
+    // A long catalog, like the real one.
+    await page.evaluate(async () => {
+      for (let i = 0; i < 60; i += 1) {
+        await fetch("/api/products", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: `בדיקה ${i} ⇔ יעד ${i}`, price: 100 + i }) });
+      }
+    });
+  }
   await page.goto(`${base}/products`, { waitUntil: "load" });
   await page.waitForTimeout(1500);
   const y = () => page.evaluate(() => Math.round(window.scrollY));
@@ -37,6 +46,9 @@ for (const [device, viewport, mobile] of [["desktop", { width: 1440, height: 900
   }
   await page.screenshot({ path: `${out}/probe-${device}-saved.png` });
   await context.close();
+ } catch (error) {
+  report.push(`${device}: ERROR ${String(error.message).split("\n")[0]}`);
+ }
 }
 await browser.close();
 console.log(report.join("\n"));
