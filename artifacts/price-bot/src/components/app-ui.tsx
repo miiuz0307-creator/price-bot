@@ -1,4 +1,5 @@
 import { type ReactNode, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertCircle, PackageOpen, RefreshCcw, X } from 'lucide-react';
 
 export function formatDate(value: string | null | undefined) {
@@ -151,7 +152,9 @@ export function Modal({
     };
   }, []);
 
-  return (
+  // Rendered at the end of <body>: page sections animate with CSS transforms, and a
+  // transformed ancestor would pin this "fixed" layer to the middle of a long page.
+  return createPortal(
     <div className="fixed inset-0 z-40 grid items-end bg-[hsl(var(--foreground)/.42)] p-0 backdrop-blur-sm sm:items-center sm:p-5" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <div className="animate-rise-in max-h-[92dvh] w-full overflow-y-auto rounded-t-2xl border border-border bg-card p-5 shadow-2xl sm:mx-auto sm:max-w-lg sm:rounded-2xl sm:p-7" role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <div className="mb-6 flex items-start justify-between gap-4">
@@ -165,6 +168,7 @@ export function Modal({
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
