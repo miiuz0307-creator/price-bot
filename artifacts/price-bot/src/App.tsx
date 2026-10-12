@@ -98,7 +98,11 @@ import './index.css';
 
 /** Greeting by the time in Israel (not a fixed "good morning"). */
 function greeting(date = new Date()) {
-  const hour = Number(new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hourCycle: 'h23', timeZone: 'Asia/Jerusalem' }).format(date));
+  let hour = date.getHours();
+  try {
+    const israel = Number(new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hourCycle: 'h23', timeZone: 'Asia/Jerusalem' }).format(date));
+    if (Number.isFinite(israel)) hour = israel % 24;
+  } catch { /* device time */ }
   if (hour >= 5 && hour < 12) return 'בוקר טוב';
   if (hour >= 12 && hour < 17) return 'צהריים טובים';
   if (hour >= 17 && hour < 21) return 'ערב טוב';
