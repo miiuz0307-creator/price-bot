@@ -87,6 +87,7 @@ import { normalizeCurrency, productDto, adminDto, targetDto, lookupRequestDto } 
 import { primaryOwnerPhone, primaryOwnerLabel, ownerBootstrapAllowed, getOrCreateOwnerAdmin } from "../services/owner";
 
 import { audit } from "../services/audit";
+import { telegramBot } from "../services/telegram";
 import { auditEntries } from "./team";
 
 const router: IRouter = Router();
@@ -109,6 +110,10 @@ router.get("/dashboard/summary", async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+router.get("/integration/telegram", (_req, res) => {
+  res.json(telegramBot.status());
 });
 
 router.get("/integration/whatsapp", async (req, res, next) => {

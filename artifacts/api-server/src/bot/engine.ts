@@ -78,6 +78,7 @@ import { formatBillingCalculation, parseBillingAmount } from "../services/billin
 import { logger } from "../lib/logger";
 import { notifyWorkspace } from "../services/push";
 import { publish } from "../services/live";
+import { telegramBot } from "../services/telegram";
 import { formatSurgePrice, isSurgeAboveCatalog, isSurgeActiveAt, matchSurgeProduct, matchesSurgeDirection, parseSurgeQuotes, sortSurgeOffers, surgeDirectionKey, surgeEffectiveExpiry, surgeLifetimeMs } from "../services/surge-pricing";
 
 import { sessionCookieName, sessionLifetimeMs, scrypt, hashCode, verifyCode, validCode, loginKeys, loginRetryAfterSeconds, recordLoginFailure, rejectIfLoginBlocked, loginFailures, sendSession, endCurrentSession, revokeAllSessions, requireAdmin, requireOwner, requirePermission, hasPermission, effectivePermissions, isPermission, allPermissions, workspaceId, type Permission, type AuthAdmin } from "../auth/admin-auth";
@@ -202,7 +203,12 @@ export async function processPriceBotMessage({
   body,
   isGroup = false,
   notifyAdmins = true,
-}: Pick<IncomingWhatsAppMessage, "adminId" | "from" | "chatId" | "body"> & Partial<Pick<IncomingWhatsAppMessage, "isGroup">> & { notifyAdmins?: boolean }) {
+  alwaysActive = false,
+}: Pick<IncomingWhatsAppMessage, "adminId" | "from" | "chatId" | "body"> & Partial<Pick<IncomingWhatsAppMessage, "isGroup">> & {
+  notifyAdmins?: boolean;
+  /** Channels without a targets list (Telegram): the bot answers in every chat it is in. */
+  alwaysActive?: boolean;
+}) {
   const message = body.trim();
   const groupPriceQuery = /^מ\s+.+/u.test(message);
   if (isGroup && !groupPriceQuery) {
@@ -212,7 +218,7 @@ export async function processPriceBotMessage({
     db.select().from(priceBotTargets).where(and(eq(priceBotTargets.active, true), eq(priceBotTargets.adminId, adminId))),
     db.select().from(priceBotAdmins).where(and(eq(priceBotAdmins.id, adminId), eq(priceBotAdmins.active, true))).then((rows) => rows[0]),
   ]);
-  const target = targets.find((row) => normalizeIdentifier(row.identifier, row.kind) === normalizeIdentifier(chatId, isGroup ? "group" : "contact"));
+  const target = alwaysActive || targets.find((row) => normalizeIdentifier(row.identifier, row.kind) === normalizeIdentifier(chatId, isGroup ? "group" : "contact"));
   let responseText = "";
   let matched = false;
   let localRouteWithoutPrice = false;
@@ -438,4 +444,11 @@ export const priceBotReady: Promise<void> = (async () => {
     accounts: everyone.map((admin) => ({ id: admin.id, label: admin.label, role: admin.role, active: admin.active, sharesWhatsAppOf: admin.whatsappOwnerId, hasEmail: Boolean(admin.email) })),
   }, "Accounts overview");
   setTimeout(() => logger.info({ connectedWorkspaces: whatsappWeb.connectedAdminIds() }, "Connected WhatsApp workspaces"), 30_000).unref();
+  // Telegram (if TELEGRAM_BOT_TOKEN is set): same bot, answering for the owner's workspace.
+  void telegramBot.start(async (message) => {
+    const result = await processPriceBotMessage({
+      adminId: owner.id, from: message.from, chatId: message.chatId, body: message.body, isGroup: message.isGroup, alwaysActive: true,
+    });
+    return result.shouldReply && result.responseText ? result.responseText : null;
+  });
 })().catch((error) => logger.error({ err: error }, "Unable to initialize administrator WhatsApp sessions"));

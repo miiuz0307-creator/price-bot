@@ -2,6 +2,7 @@ import { migrationsReady, pool } from "@workspace/db";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { whatsappWeb } from "./services/whatsapp-web";
+import { telegramBot } from "./services/telegram";
 
 const rawPort = process.env["PORT"];
 
@@ -42,6 +43,7 @@ async function shutdown(signal: string) {
   const forceExit = setTimeout(() => process.exit(1), 10_000);
   forceExit.unref();
   server.close();
+  telegramBot.stop();
   await whatsappWeb.shutdown().catch((err) => logger.warn({ err }, "WhatsApp shutdown failed"));
   await pool.end().catch((err) => logger.warn({ err }, "Database pool shutdown failed"));
   process.exit(0);
