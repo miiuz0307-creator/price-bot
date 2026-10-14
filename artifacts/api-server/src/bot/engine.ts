@@ -400,12 +400,39 @@ function pushWhatsAppEvent(adminId: number, type: string) {
   }
 }
 
-whatsappWeb.registerMessageHandler(async (message) => {
-  if (message.isGroup) await captureSurgeQuote(message);
-  if (message.isHistory) return null;
-  const result = await processPriceBotMessage(message);
-  return result.shouldReply ? result : null;
-});
+// After a restart WhatsApp delivers everything that arrived meanwhile at once.
+// Handle at most a few messages at a time (the database pool stays free for the
+// website), and retry a message once if the database was momentarily unreachable.
+const maxParallelMessages = 4;
+let runningMessages = 0;
+const waitingMessages: (() => void)[] = [];
+async function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
+  if (runningMessages >= maxParallelMessages) await new Promise<void>((resolve) => waitingMessages.push(resolve));
+  runningMessages += 1;
+  try {
+    return await work();
+  } finally {
+    runningMessages -= 1;
+    waitingMessages.shift()?.();
+  }
+}
+const isDatabaseBusy = (error: unknown) => /timeout exceeded when trying to connect|Connection terminated|ECONNRESET|too many clients/i.test(String((error as { message?: string })?.message ?? error) + String((error as { cause?: { message?: string } })?.cause?.message ?? ""));
+
+whatsappWeb.registerMessageHandler((message) => oneAtATime(async () => {
+  const handle = async () => {
+    if (message.isGroup) await captureSurgeQuote(message);
+    if (message.isHistory) return null;
+    const result = await processPriceBotMessage(message);
+    return result.shouldReply ? result : null;
+  };
+  try {
+    return await handle();
+  } catch (error) {
+    if (!isDatabaseBusy(error)) throw error;
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+    return handle();
+  }
+}));
 
 export const priceBotReady: Promise<void> = (async () => {
   await migrationsReady;
