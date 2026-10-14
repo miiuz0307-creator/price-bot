@@ -52,7 +52,7 @@ export default function TelegramPage() {
         <div><h2 className="font-extrabold">מי משתמש בבוט</h2><p className="mt-1 text-xs text-muted-foreground">האחרונים שכתבו מופיעים ראשונים.</p></div>
         <label className="relative sm:w-64">
           <Search className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="חיפוש לפי שם או משתמש" className="input-base pr-9" aria-label="חיפוש משתמשי טלגרם" />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="חיפוש לפי שם או משתמש" className="input-base" style={{ paddingRight: "2.5rem" }} aria-label="חיפוש משתמשי טלגרם" />
         </label>
       </div>
       {users.isLoading ? <div className="grid gap-2 p-5"><Skeleton className="h-14" /><Skeleton className="h-14" /><Skeleton className="h-14" /></div>
