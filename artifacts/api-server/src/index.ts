@@ -1,4 +1,5 @@
 import dns from "node:dns";
+import net from "node:net";
 import { migrationsReady, pool } from "@workspace/db";
 import app from "./app";
 import { logger } from "./lib/logger";
@@ -7,6 +8,10 @@ import { telegramBot } from "./services/telegram";
 
 // The hosting network has no IPv6 route to some services (Telegram): prefer IPv4.
 dns.setDefaultResultOrder("ipv4first");
+// Node's "happy eyeballs" gives each address only 250 ms to answer; from this host
+// Telegram sometimes takes longer, so connections failed with ETIMEDOUT. Connect to
+// the (IPv4) address normally and let the regular connect timeout apply.
+net.setDefaultAutoSelectFamily(false);
 
 const rawPort = process.env["PORT"];
 

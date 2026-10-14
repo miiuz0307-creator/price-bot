@@ -84,6 +84,7 @@ class TelegramBot {
         clearTimeout(timer);
         this.lastError = null;
         delay = 1000;
+        if (failures >= 3) logger.info({ failures }, "Telegram polling recovered");
         failures = 0;
         for (const update of updates) {
           this.offset = update.update_id + 1;
