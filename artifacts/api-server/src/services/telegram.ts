@@ -71,14 +71,16 @@ class TelegramBot {
 
   private async poll() {
     let delay = 1000;
+    let failures = 0;
     while (this.running) {
       try {
         this.abort = new AbortController();
-        const timer = setTimeout(() => this.abort?.abort(), 65_000);
-        const updates = await this.call<Update[]>("getUpdates", { offset: this.offset, timeout: 50, allowed_updates: ["message"] }, this.abort.signal);
+        const timer = setTimeout(() => this.abort?.abort(), 40_000);
+        const updates = await this.call<Update[]>("getUpdates", { offset: this.offset, timeout: 25, allowed_updates: ["message"] }, this.abort.signal);
         clearTimeout(timer);
         this.lastError = null;
         delay = 1000;
+        failures = 0;
         for (const update of updates) {
           this.offset = update.update_id + 1;
           if (update.message) void this.handle(update.message);
@@ -88,7 +90,9 @@ class TelegramBot {
         const message = error instanceof Error ? error.message : String(error);
         // 409 = another copy of the server is polling (a deploy is switching over): wait.
         this.lastError = message;
-        if (!/abort/i.test(message)) logger.warn({ err: message }, "Telegram polling error");
+        // A dropped long-poll connection now and then is normal; only report a real outage.
+        failures += 1;
+        if (failures >= 3 && !/abort/i.test(message)) logger.warn({ err: message, failures }, "Telegram polling error");
         await new Promise((resolve) => setTimeout(resolve, delay));
         delay = Math.min(delay * 2, 30_000);
       }
