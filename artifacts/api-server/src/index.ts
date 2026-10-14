@@ -1,8 +1,12 @@
+import dns from "node:dns";
 import { migrationsReady, pool } from "@workspace/db";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { whatsappWeb } from "./services/whatsapp-web";
 import { telegramBot } from "./services/telegram";
+
+// The hosting network has no IPv6 route to some services (Telegram): prefer IPv4.
+dns.setDefaultResultOrder("ipv4first");
 
 const rawPort = process.env["PORT"];
 

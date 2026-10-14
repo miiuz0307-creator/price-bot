@@ -87,7 +87,8 @@ class TelegramBot {
         }
       } catch (error) {
         if (!this.running) break;
-        const message = error instanceof Error ? error.message : String(error);
+        const cause = (error as { cause?: { code?: string; message?: string } })?.cause;
+        const message = [error instanceof Error ? error.message : String(error), cause?.code ?? cause?.message].filter(Boolean).join(": ");
         // 409 = another copy of the server is polling (a deploy is switching over): wait.
         this.lastError = message;
         // A dropped long-poll connection now and then is normal; only report a real outage.
