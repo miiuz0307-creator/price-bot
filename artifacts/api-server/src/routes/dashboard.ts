@@ -116,6 +116,26 @@ router.get("/integration/telegram", (_req, res) => {
   res.json(telegramBot.status());
 });
 
+router.get("/integration/telegram/users", requirePermission("users.manage"), async (req, res, next) => {
+  try {
+    const rows = await telegramBot.users(workspaceId(req.authAdmin!));
+    res.json(rows.map((row) => ({
+      id: row.id,
+      telegramId: String(row.telegramId),
+      username: row.username || null,
+      name: [row.firstName, row.lastName].filter(Boolean).join(" ") || (row.username ? `@${row.username}` : String(row.telegramId)),
+      lastChatType: row.lastChatType === "private" ? "private" : "group",
+      lastChatTitle: row.lastChatTitle || null,
+      messageCount: row.messageCount,
+      lastMessage: row.lastMessage,
+      firstSeenAt: row.firstSeenAt.toISOString(),
+      lastSeenAt: row.lastSeenAt.toISOString(),
+    })));
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/integration/whatsapp", async (req, res, next) => {
   try {
     res.json(GetWhatsAppStatusResponse.parse(await whatsappWeb.getStatus(workspaceId(req.authAdmin!), req.authAdmin!.role === "owner" && !req.authAdmin!.whatsappOwnerId)));

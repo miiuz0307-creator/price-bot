@@ -593,6 +593,32 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/WhatsAppGroup"
+  /integration/telegram:
+    get:
+      operationId: getTelegramStatus
+      tags: [integration]
+      summary: Telegram bot connection status
+      responses:
+        "200":
+          description: Telegram status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TelegramStatus"
+  /integration/telegram/users:
+    get:
+      operationId: listTelegramUsers
+      tags: [integration]
+      summary: People who have written to the Telegram bot (most recent first)
+      responses:
+        "200":
+          description: Telegram users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TelegramUser"
   /targets:
     get:
       operationId: listTargets
@@ -1079,6 +1105,28 @@ components:
       properties:
         matched: { type: boolean }
         responseText: { type: string }
+    TelegramStatus:
+      type: object
+      required: [configured, connected, username, lastError]
+      properties:
+        configured: { type: boolean }
+        connected: { type: boolean }
+        username: { type: ["string", "null"] }
+        lastError: { type: ["string", "null"] }
+    TelegramUser:
+      type: object
+      required: [id, telegramId, username, name, lastChatType, lastChatTitle, messageCount, lastMessage, firstSeenAt, lastSeenAt]
+      properties:
+        id: { type: integer }
+        telegramId: { type: string }
+        username: { type: ["string", "null"] }
+        name: { type: string }
+        lastChatType: { type: string, enum: [private, group] }
+        lastChatTitle: { type: ["string", "null"] }
+        messageCount: { type: integer }
+        lastMessage: { type: string }
+        firstSeenAt: { type: string }
+        lastSeenAt: { type: string }
     WhatsAppGroup:
       type: object
       required: [identifier, label]

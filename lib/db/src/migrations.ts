@@ -194,6 +194,27 @@ ALTER TABLE price_bot_products ADD COLUMN IF NOT EXISTS notes text NOT NULL DEFA
 ALTER TABLE price_bot_products ADD COLUMN IF NOT EXISTS sections jsonb NOT NULL DEFAULT '[]'::jsonb;
 `,
   },
+  {
+    id: "0004_telegram_users",
+    sql: `
+CREATE TABLE IF NOT EXISTS price_bot_telegram_users (
+  id serial PRIMARY KEY,
+  admin_id integer NOT NULL,
+  telegram_id bigint NOT NULL,
+  username text NOT NULL DEFAULT '',
+  first_name text NOT NULL DEFAULT '',
+  last_name text NOT NULL DEFAULT '',
+  last_chat_type text NOT NULL DEFAULT 'private',
+  last_chat_title text NOT NULL DEFAULT '',
+  message_count integer NOT NULL DEFAULT 0,
+  last_message text NOT NULL DEFAULT '',
+  first_seen_at timestamp with time zone NOT NULL DEFAULT now(),
+  last_seen_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT price_bot_telegram_users_admin_user_unique UNIQUE (admin_id, telegram_id),
+  CONSTRAINT price_bot_telegram_users_admin_id_price_bot_admins_id_fk FOREIGN KEY (admin_id) REFERENCES price_bot_admins(id) ON DELETE CASCADE
+);
+`,
+  },
 ];
 
 /** Applies pending migrations once, under an advisory lock (safe with several instances). */

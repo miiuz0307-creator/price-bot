@@ -16,6 +16,7 @@ const pages = [
   ["targets", "/targets"],
   ["users", "/admins"],
   ["activity", "/activity"],
+  ["telegram", "/telegram"],
   ["settings", "/settings"],
 ];
 const viewports = [

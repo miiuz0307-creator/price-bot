@@ -22,3 +22,4 @@ export * from "./price-bot-abbreviations";
 export * from "./price-bot-surge";
 export * from "./accounts";
 
+export * from "./price-bot-telegram";

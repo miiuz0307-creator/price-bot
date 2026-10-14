@@ -1,3 +1,5 @@
+import { desc, eq, sql } from "drizzle-orm";
+import { db, priceBotTelegramUsers } from "@workspace/db";
 import { logger } from "../lib/logger";
 
 /**
@@ -34,6 +36,7 @@ class TelegramBot {
   private running = false;
   private abort: AbortController | null = null;
   private handler: TelegramReplyHandler | null = null;
+  private workspaceId: number | null = null;
   username: string | null = null;
   lastError: string | null = null;
 
@@ -49,7 +52,8 @@ class TelegramBot {
     return result.result;
   }
 
-  async start(handler: TelegramReplyHandler) {
+  async start(handler: TelegramReplyHandler, options: { workspaceId?: number } = {}) {
+    this.workspaceId = options.workspaceId ?? null;
     this.token = process.env.TELEGRAM_BOT_TOKEN?.trim() ?? "";
     if (!this.token || this.running) return;
     this.handler = handler;
@@ -104,6 +108,7 @@ class TelegramBot {
     const text = message.text?.trim();
     if (!text || message.from?.is_bot || !this.handler) return;
     const isGroup = message.chat.type === "group" || message.chat.type === "supergroup";
+    void this.remember(message, text);
     try {
       if (/^\/(start|help)(@\w+)?$/u.test(text)) {
         await this.send(message.chat.id, "שלום! 👋\nלבדיקת מחיר שלחו: <b>מ</b> ואחריו המסלול, למשל:\n<code>מ בני ברק ירושלים</code>", message.message_id);
@@ -128,6 +133,35 @@ class TelegramBot {
         ...(replyTo ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } } : {}),
       });
     }
+  }
+
+  /** Keeps the list of people using the bot (shown in the app and website). Never blocks a reply. */
+  private async remember(message: TelegramMessage, text: string) {
+    const user = message.from;
+    if (!user || this.workspaceId === null) return;
+    const now = new Date();
+    const values = {
+      username: user.username ?? "", firstName: user.first_name ?? "", lastName: user.last_name ?? "",
+      lastChatType: message.chat.type, lastChatTitle: message.chat.title ?? "",
+      lastMessage: text.slice(0, 300), lastSeenAt: now,
+    };
+    try {
+      await db.insert(priceBotTelegramUsers)
+        .values({ adminId: this.workspaceId, telegramId: user.id, messageCount: 1, firstSeenAt: now, ...values })
+        .onConflictDoUpdate({
+          target: [priceBotTelegramUsers.adminId, priceBotTelegramUsers.telegramId],
+          set: { ...values, messageCount: sql`${priceBotTelegramUsers.messageCount} + 1` },
+        });
+    } catch (error) {
+      logger.warn({ err: error }, "Unable to record Telegram user");
+    }
+  }
+
+  async users(workspaceId: number) {
+    return db.select().from(priceBotTelegramUsers)
+      .where(eq(priceBotTelegramUsers.adminId, workspaceId))
+      .orderBy(desc(priceBotTelegramUsers.lastSeenAt))
+      .limit(1000);
   }
 
   stop() {

@@ -78,6 +78,7 @@ export default function MoreScreen() {
         <ListRow icon="message-circle" title="יעדים: אנשי קשר וקבוצות" value={targets.data ? String(targets.data.length) : undefined} onPress={() => router.push('/targets')} />
         <ListRow icon="type" title="קיצורים" subtitle="למשל „בב” = בני ברק" onPress={() => router.push('/abbreviations')} />
         {can('users.manage') ? <ListRow icon="users" title="משתמשים והרשאות" value={admins.data ? String(admins.data.length) : undefined} onPress={() => router.push('/users')} /> : null}
+        {can('users.manage') ? <ListRow icon="send" title="משתמשי טלגרם" subtitle="מי כותב לבוט בטלגרם" onPress={() => router.push('/telegram')} /> : null}
         {can('users.manage') ? <ListRow icon="activity" title="מערכת ופעילות" onPress={() => router.push('/activity')} /> : null}
       </ListGroup>
 

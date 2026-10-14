@@ -94,6 +94,7 @@ function AppNavigator() {
         <Stack.Screen name="abbreviations" />
         <Stack.Screen name="users" />
         <Stack.Screen name="activity" />
+        <Stack.Screen name="telegram" />
       </Stack.Protected>
       <Stack.Protected guard={!signedIn}>
         <Stack.Screen name="login" options={{ animation: 'fade' }} />

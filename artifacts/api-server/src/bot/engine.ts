@@ -477,5 +477,5 @@ export const priceBotReady: Promise<void> = (async () => {
       adminId: owner.id, from: message.from, chatId: message.chatId, body: message.body, isGroup: message.isGroup, alwaysActive: true,
     });
     return result.shouldReply && result.responseText ? result.responseText : null;
-  });
+  }, { workspaceId: owner.id });
 })().catch((error) => logger.error({ err: error }, "Unable to initialize administrator WhatsApp sessions"));

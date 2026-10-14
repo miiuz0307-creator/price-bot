@@ -30,6 +30,7 @@ const screens = [
   ["abbreviations", "/abbreviations"],
   ["users", "/users"],
   ["activity", "/activity"],
+  ["telegram", "/telegram"],
 ];
 
 const browser = await chromium.launch();
