@@ -863,6 +863,35 @@ export const ListWhatsAppGroupsResponse = zod.array(ListWhatsAppGroupsResponseIt
 
 
 /**
+ * @summary Telegram bot connection status
+ */
+export const GetTelegramStatusResponse = zod.object({
+  "configured": zod.boolean(),
+  "connected": zod.boolean(),
+  "username": zod.string().nullable(),
+  "lastError": zod.string().nullable()
+})
+
+
+/**
+ * @summary People who have written to the Telegram bot (most recent first)
+ */
+export const ListTelegramUsersResponseItem = zod.object({
+  "id": zod.int(),
+  "telegramId": zod.string(),
+  "username": zod.string().nullable(),
+  "name": zod.string(),
+  "lastChatType": zod.enum(['private', 'group']),
+  "lastChatTitle": zod.string().nullable(),
+  "messageCount": zod.int(),
+  "lastMessage": zod.string(),
+  "firstSeenAt": zod.string(),
+  "lastSeenAt": zod.string()
+})
+export const ListTelegramUsersResponse = zod.array(ListTelegramUsersResponseItem)
+
+
+/**
  * @summary List the current administrator's active contacts and groups
  */
 export const ListTargetsResponseItem = zod.object({

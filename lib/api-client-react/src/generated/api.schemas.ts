@@ -404,6 +404,38 @@ export interface WhatsAppMessageResult {
   responseText: string;
 }
 
+export interface TelegramStatus {
+  configured: boolean;
+  connected: boolean;
+  /** @nullable */
+  username: string | null;
+  /** @nullable */
+  lastError: string | null;
+}
+
+export type TelegramUserLastChatType = typeof TelegramUserLastChatType[keyof typeof TelegramUserLastChatType];
+
+
+export const TelegramUserLastChatType = {
+  private: 'private',
+  group: 'group',
+} as const;
+
+export interface TelegramUser {
+  id: number;
+  telegramId: string;
+  /** @nullable */
+  username: string | null;
+  name: string;
+  lastChatType: TelegramUserLastChatType;
+  /** @nullable */
+  lastChatTitle: string | null;
+  messageCount: number;
+  lastMessage: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+}
+
 export interface WhatsAppGroup {
   identifier: string;
   label: string;

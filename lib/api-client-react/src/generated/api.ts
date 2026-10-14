@@ -53,6 +53,8 @@ import type {
   Target,
   TargetInput,
   TargetUpdate,
+  TelegramStatus,
+  TelegramUser,
   WhatsAppGroup,
   WhatsAppMessageInput,
   WhatsAppMessageResult,
@@ -2863,6 +2865,160 @@ export function useListWhatsAppGroups<TData = Awaited<ReturnType<typeof listWhat
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListWhatsAppGroupsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetTelegramStatusUrl = () => {
+
+
+
+
+  return `/api/integration/telegram`
+}
+
+/**
+ * @summary Telegram bot connection status
+ */
+export const getTelegramStatus = async ( options?: Parameters<typeof customFetch>[1]): Promise<TelegramStatus> => {
+
+  return customFetch<TelegramStatus>(getGetTelegramStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTelegramStatusQueryKey = () => {
+    return [
+    `/api/integration/telegram`
+    ] as const;
+    }
+
+
+export const getGetTelegramStatusQueryOptions = <TData = Awaited<ReturnType<typeof getTelegramStatus>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTelegramStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTelegramStatusQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTelegramStatus>>> = ({ signal }) => getTelegramStatus({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTelegramStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTelegramStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getTelegramStatus>>>
+export type GetTelegramStatusQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Telegram bot connection status
+ */
+
+export function useGetTelegramStatus<TData = Awaited<ReturnType<typeof getTelegramStatus>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTelegramStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTelegramStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListTelegramUsersUrl = () => {
+
+
+
+
+  return `/api/integration/telegram/users`
+}
+
+/**
+ * @summary People who have written to the Telegram bot (most recent first)
+ */
+export const listTelegramUsers = async ( options?: Parameters<typeof customFetch>[1]): Promise<TelegramUser[]> => {
+
+  return customFetch<TelegramUser[]>(getListTelegramUsersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTelegramUsersQueryKey = () => {
+    return [
+    `/api/integration/telegram/users`
+    ] as const;
+    }
+
+
+export const getListTelegramUsersQueryOptions = <TData = Awaited<ReturnType<typeof listTelegramUsers>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTelegramUsers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTelegramUsersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTelegramUsers>>> = ({ signal }) => listTelegramUsers({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTelegramUsers>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTelegramUsersQueryResult = NonNullable<Awaited<ReturnType<typeof listTelegramUsers>>>
+export type ListTelegramUsersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary People who have written to the Telegram bot (most recent first)
+ */
+
+export function useListTelegramUsers<TData = Awaited<ReturnType<typeof listTelegramUsers>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTelegramUsers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTelegramUsersQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
