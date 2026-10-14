@@ -147,7 +147,10 @@ export function parsePastedPriceMessage(text: string) {
   // "<route> - 1", "<route> - 2": the route itself is the product, the rest are extra price blocks.
   const name = rest.length && /\s-\s*1$/u.test(main.title) ? main.title.replace(/\s*-\s*1$/u, '').trim() : main.title;
   const notesMatch = text.match(/📝\s*\*?\s*הערות\s*-\s*\*?\s*([^\n]*)((?:\n[^\n]*)*)/u);
-  const notes = notesMatch ? [clean(notesMatch[1]), ...notesMatch[2].split('\n').map((line) => line.trim()).filter((line) => line && !/^(פותח על ידי|🤖|-{3,})/u.test(line))].filter(Boolean).join('\n') : '';
+  // WhatsApp signature links (wa.me/…) are never part of the price.
+  const noLinks = (line: string) => line.replace(/(?:https?:\/\/)?(?:www\.)?(?:wa\.me|api\.whatsapp\.com)\/\S*/giu, '').trim();
+  const notes = notesMatch ? [clean(notesMatch[1]), ...notesMatch[2].split('\n').map((line) => line.trim()).filter((line) => line && !/^(פותח על ידי|🤖|-{3,})/u.test(line))]
+    .map(noLinks).filter((line) => /[\p{L}\p{N}]/u.test(line)).join('\n') : '';
   const aliases = [...text.matchAll(/(?:לא מצאתי תשובה\s*ל|תיקנתי ל)\s*:\s*([^\n]+)/gu)]
     .map((match) => clean(match[1]))
     .filter(Boolean);

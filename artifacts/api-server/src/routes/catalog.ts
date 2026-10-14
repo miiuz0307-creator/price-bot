@@ -84,6 +84,7 @@ import { normalizeCurrency, productDto, adminDto, targetDto, lookupRequestDto } 
 import { primaryOwnerPhone, primaryOwnerLabel, ownerBootstrapAllowed, getOrCreateOwnerAdmin } from "../services/owner";
 
 import { audit } from "../services/audit";
+import { stripProductLinks } from "../lib/strip-links";
 
 const router: IRouter = Router();
 
@@ -114,7 +115,7 @@ router.get("/products", async (_req, res, next) => {
 
 router.post("/products", requirePermission("catalog.edit"), async (req, res, next) => {
   try {
-    const data = CreateProductBody.parse(req.body);
+    const data = stripProductLinks(CreateProductBody.parse(req.body));
     const [row] = await db
       .insert(priceBotProducts)
       .values({
@@ -143,7 +144,7 @@ router.post("/products", requirePermission("catalog.edit"), async (req, res, nex
 router.patch("/products/:id", requirePermission("catalog.edit"), async (req, res, next) => {
   try {
     const { id } = UpdateProductParams.parse(req.params);
-    const data = UpdateProductBody.parse(req.body);
+    const data = stripProductLinks(UpdateProductBody.parse(req.body));
     const [current] = await db.select().from(priceBotProducts).where(eq(priceBotProducts.id, id));
     if (!current) {
       res.status(404).json({ error: "המחיר לא נמצא" });

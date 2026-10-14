@@ -70,6 +70,7 @@ import {
   priceBotTargets,
 } from "@workspace/db";
 import { whatsappWeb, type IncomingWhatsAppMessage } from "../services/whatsapp-web";
+import { stripProductLinks } from "../lib/strip-links";
 import { expandCustomAbbreviations, isBuiltInAbbreviation, normalizeSearchText, normalizedSearchVariants } from "../services/catalog-search";
 import { drivingDistanceKm, estimateReferenceRoute, estimatedPriceMatrix, estimatedWaitTime, formatRouteEstimate, isIntraCityRoute, parseUnlistedRoute, requiresManualCatalogPrice, resolveRouteAddresses } from "../services/route-estimate";
 import { formatBillingCalculation, parseBillingAmount } from "../services/billing-calculator";
@@ -104,7 +105,8 @@ export function messageHeader(admin: typeof priceBotAdmins.$inferSelect | undefi
   return admin?.label.trim() === "יצחק" ? "🤖 המחירון הרשמי של 8000*" : "🤖 *המחירון הרשמי של 8080*";
 }
 
-export function formatProductResponse(product: typeof priceBotProducts.$inferSelect, header: string, credit: string) {
+export function formatProductResponse(storedProduct: typeof priceBotProducts.$inferSelect, header: string, credit: string) {
+  const product = stripProductLinks(storedProduct);
   const currency = product.currency === "ILS" ? "₪" : `${product.currency} `;
   const formatPrice = (price: number) => `${currency}${price.toLocaleString("he-IL")}`;
   const pricingLines = (matrix: number[]) => {

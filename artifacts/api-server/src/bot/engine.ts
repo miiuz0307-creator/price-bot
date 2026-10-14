@@ -87,6 +87,7 @@ import { findClosestProduct } from "../bot/search";
 import { messageCredit, messageHeader, formatProductResponse, formatHourlyPricingResponse, formatExtrasResponse } from "../bot/replies";
 import { normalizeCurrency, productDto, adminDto, targetDto, lookupRequestDto } from "../routes/dto";
 import { audit } from "../services/audit";
+import { stripProductLinks } from "../lib/strip-links";
 import { primaryOwnerPhone, primaryOwnerLabel, ownerBootstrapAllowed, getOrCreateOwnerAdmin } from "../services/owner";
 
 /**
@@ -439,6 +440,17 @@ export const priceBotReady: Promise<void> = (async () => {
   // One-time, idempotent repair of products saved with "₪" by the old web forms.
   await db.update(priceBotProducts).set({ currency: "ILS" })
     .where(sql`trim(${priceBotProducts.currency}) in ('₪', 'ils', 'nis', 'NIS', 'ש"ח', 'ש״ח', 'שח', 'שקל')`);
+  // Idempotent: remove WhatsApp signature links (wa.me/…) that came in with pasted price messages.
+  const withLinks = await db.select().from(priceBotProducts)
+    .where(sql`${priceBotProducts}::text ~* '(wa\\.me|api\\.whatsapp\\.com)/'`);
+  for (const product of withLinks) {
+    const clean = stripProductLinks(product);
+    await db.update(priceBotProducts).set({
+      name: clean.name, subtitle: clean.subtitle, notes: clean.notes, distance: clean.distance, duration: clean.duration,
+      level: clean.level, waitTime: clean.waitTime, aliases: clean.aliases, sections: clean.sections,
+    }).where(eq(priceBotProducts.id, product.id));
+  }
+  if (withLinks.length) logger.info({ products: withLinks.map((product) => product.name) }, "Removed WhatsApp links from catalog products");
   const owner = await getOrCreateOwnerAdmin();
   const initialCode = process.env.OWNER_INITIAL_CODE?.trim();
   if (!owner.codeHash && initialCode) {
