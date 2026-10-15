@@ -64,7 +64,8 @@ function expandRouteAbbreviations(value: string) {
 }
 
 export function normalizedSearchVariants(value: string) {
-  const expanded = expandRouteAbbreviations(value);
+  // "<route> - 1": a numbered price block of a route is still that route.
+  const expanded = expandRouteAbbreviations(value.replace(/\s+-\s*\d{1,2}\s*$/u, ""));
   const routeSegments = expanded.split("⇔").map((segment) => segment.trim()).filter(Boolean);
   const segments = routeSegments.map(normalizeSearchText);
   const variants = new Set([normalizeSearchText(expanded)]);
