@@ -111,7 +111,7 @@ async function githubActionsOk(token: string) {
     && claims.ref === "refs/heads/main";
 }
 
-async function tokenOk(req: Request) {
+export async function tokenOk(req: Request) {
   const given = (req.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
   const expected = process.env.APP_UPDATE_TOKEN ?? "";
   if (expected.length >= 24 && given.length === expected.length && timingSafeEqual(Buffer.from(given), Buffer.from(expected))) return true;

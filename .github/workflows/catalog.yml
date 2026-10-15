@@ -1,0 +1,38 @@
+# Catalog maintenance (manual): compare a list of routes with the live bot, or add new
+# routes. Request = scripts/catalog/<action>.json; the server's answer is saved to the
+# branch "catalog-results" as <action>-result.json. "import" only adds routes the bot
+# does not answer yet — it never changes or deletes existing ones.
+name: Catalog
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: check or import
+        required: true
+        default: check
+permissions:
+  contents: write
+  id-token: write
+jobs:
+  run:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Call the server
+        env:
+          ACTION: ${{ inputs.action }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "$ACTION" in check|import) ;; *) echo "::error::unknown action"; exit 1;; esac
+          TOKEN=$(curl -sf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=price-bot-updates" | jq -r .value)
+          URL=$(node -p "require('./artifacts/price-bot-mobile/app.json').expo.updates.url.replace('/api/app-updates/manifest','')")
+          mkdir -p $RUNNER_TEMP/out
+          code=$(curl -s -o $RUNNER_TEMP/out/$ACTION-result.json -w '%{http_code}' -X POST "$URL/api/maintenance/catalog/$ACTION" \
+            -H "authorization: Bearer $TOKEN" -H "content-type: application/json" --data-binary @scripts/catalog/$ACTION.json)
+          echo "::notice title=Catalog $ACTION::HTTP $code"
+          cd $RUNNER_TEMP/out && git init -q && git add -A
+          git -c user.name=ci-bot -c user.email=ci-bot@users.noreply.github.com commit -qm "catalog $ACTION ${{ github.run_id }}"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}" HEAD:refs/heads/catalog-results
+          [ "$code" = 200 ]
