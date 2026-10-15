@@ -27,6 +27,11 @@ export function expandCustomAbbreviations(
     const expansion = expansions.get(normalizeSearchText(word));
     if (!expansion) return word;
     const expandedWords = expansion.trim().split(/\s+/u);
+    // "קרית אונו" with the shortcut "אונו" → "קרית אונו", not "קרית קרית אונו".
+    if (expandedWords.length > 1 && normalizeSearchText(expandedWords[expandedWords.length - 1]) === normalizeSearchText(word)) {
+      const before = value.slice(0, offset).trimEnd().split(/\s+/u).slice(-(expandedWords.length - 1));
+      if (normalizeSearchText(before.join("")) === normalizeSearchText(expandedWords.slice(0, -1).join(""))) return word;
+    }
     if (expandedWords.length > 1 && normalizeSearchText(expandedWords[0]) === normalizeSearchText(word)) {
       const remainingWords = value.slice(offset + word.length).trimStart().split(/\s+/u);
       const completePlace = [word, ...remainingWords.slice(0, expandedWords.length - 1)].join(" ");

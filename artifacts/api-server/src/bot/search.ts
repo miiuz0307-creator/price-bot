@@ -105,7 +105,8 @@ export function findClosestProduct(rows: (typeof priceBotProducts.$inferSelect)[
   const queryVariants = normalizedSearchVariants(query);
   const normalizedQuery = queryVariants[0];
   if (!normalizedQuery) return null;
-  if (normalizedQuery.length < 7) return { kind: "needs_route" };
+  // A very short query is usually a single place; a short full route ("צפת ערד") still matches exactly.
+  const tooShort = normalizedQuery.length < 7;
   const exactMatches = new Map<number, typeof priceBotProducts.$inferSelect>();
   for (const product of rows) {
     if ([product.name, ...product.aliases].some((candidate) =>
@@ -114,6 +115,7 @@ export function findClosestProduct(rows: (typeof priceBotProducts.$inferSelect)[
       exactMatches.set(product.id, product);
     }
   }
+  if (tooShort && exactMatches.size === 0) return { kind: "needs_route" };
   if (exactMatches.size === 1) return { kind: "match", product: [...exactMatches.values()][0], corrected: false };
   if (exactMatches.size > 1) {
     const matches = [...exactMatches.values()];
