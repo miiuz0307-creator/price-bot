@@ -228,3 +228,9 @@ test("recognizes the common Beitar shortcut in a group quote", () => {
     price: "120", priceMatrix: [120, 220, 180, 340, 200, 380, 220, 420], currency: "ILS",
   }], [])?.id, 308);
 });
+test("a round-trip fare is the regular two-way price, not a surge", () => {
+  for (const body of ["ים ספר 280 הלוך חזור", "ים ספר 280 הלוך ושוב", "ים ספר 280 הלוך-חזור", "ים ספר 280 צדדים", "ים ספר 280 הו״ח", "ים ספר 280 כולל חזור", "ים ספר 280 2 כיוונים"]) {
+    assert.equal(parseSurgeQuote(body, [...places, "ספר"]), null, body);
+  }
+  assert.equal(parseSurgeQuote("ים ספר 280", [...places, "ספר"])?.price, 280);
+});

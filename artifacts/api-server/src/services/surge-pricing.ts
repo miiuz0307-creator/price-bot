@@ -94,6 +94,9 @@ export function parseSurgeQuote(body: string, knownPlaces: readonly string[]) {
   if (!lines.length || message.length > 800) return null;
   // Do not turn a request for a ride into a price offer.
   if (/[?؟]/u.test(message) || /(?:מחפש|צריך|דרוש|כמה|למחיר)/u.test(message)) return null;
+  // A round-trip fare ("הלוך ושוב", "הלוך חזור", "צדדים") is the regular two-way price,
+  // not a one-way surge price.
+  if (/הלוך\s*[-־]?\s*(?:ו?חזור|ו?שוב|ובחזרה)|(?:^|[^\p{L}\p{N}])(?:צדדים|הו["״']?ח|הלו["״']?ח)(?=$|[^\p{L}\p{N}])|(?:שני|2)\s*כיוונים|כולל\s*(?:חזור|חזרה)/u.test(message)) return null;
   // An unfamiliar vehicle must never silently become a regular car.
   const smallSix = /6\s*מק(?:ומות)?['׳״]?\s*קטן/u.test(message);
   const small = smallSix || /(?:^|[^\p{L}\p{N}])(?:מיניק|מיני)(?=$|[^\p{L}\p{N}])/u.test(message);
