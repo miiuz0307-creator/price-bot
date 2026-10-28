@@ -1,0 +1,27 @@
+name: Inspect dependency
+on:
+  workflow_dispatch:
+  push:
+    branches: [tooling/inspect]
+permissions:
+  contents: write
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10.28.0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: pnpm install --frozen-lockfile --ignore-scripts > /dev/null 2>&1 || pnpm install --ignore-scripts > /dev/null 2>&1
+      - name: Collect
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          B=$(dirname $(find node_modules/.pnpm -path '*@whiskeysockets/baileys/package.json' | head -1))
+          mkdir -p $RUNNER_TEMP/out && cd $RUNNER_TEMP/out
+          cp -r $GITHUB_WORKSPACE/$B/lib baileys-lib
+          grep -rn "ev.buffer()\|createBufferedFunction\|Buffer timeout\|BUFFER_TIMEOUT\|defaultQueryTimeoutMs\|identity changed" baileys-lib > grep.txt || true
+          git init -q && git add -A && git -c user.name=ci -c user.email=ci@x commit -qm inspect
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}" HEAD:refs/heads/ci-inspect
