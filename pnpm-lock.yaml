@@ -155,7 +155,7 @@ overrides:
 
 patchedDependencies:
   '@whiskeysockets/baileys@7.0.0-rc14':
-    hash: 142c4ba26ec6a05bfe74dcf55b8cbcb22497537518dcffbb10f1df0dcb01330d
+    hash: c7fbd223479738fc520c2b6a21103f5358d9ec987d55ecc19d46757983da18a2
     path: patches/@whiskeysockets__baileys@7.0.0-rc14.patch
 
 importers:
@@ -177,7 +177,7 @@ importers:
     dependencies:
       '@whiskeysockets/baileys':
         specifier: 7.0.0-rc14
-        version: 7.0.0-rc14(patch_hash=142c4ba26ec6a05bfe74dcf55b8cbcb22497537518dcffbb10f1df0dcb01330d)
+        version: 7.0.0-rc14(patch_hash=c7fbd223479738fc520c2b6a21103f5358d9ec987d55ecc19d46757983da18a2)
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
@@ -9030,7 +9030,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@whiskeysockets/baileys@7.0.0-rc14(patch_hash=142c4ba26ec6a05bfe74dcf55b8cbcb22497537518dcffbb10f1df0dcb01330d)':
+  '@whiskeysockets/baileys@7.0.0-rc14(patch_hash=c7fbd223479738fc520c2b6a21103f5358d9ec987d55ecc19d46757983da18a2)':
     dependencies:
       '@cacheable/node-cache': 1.7.6
       '@hapi/boom': 9.1.4
