@@ -1,0 +1,29 @@
+baileys-lib/Utils/event-buffer.js:34:    const BUFFER_TIMEOUT_MS = 30000; // 30 seconds
+baileys-lib/Utils/event-buffer.js:51:                    logger.warn('Buffer timeout reached, auto-flushing');
+baileys-lib/Utils/event-buffer.js:54:            }, BUFFER_TIMEOUT_MS);
+baileys-lib/Utils/event-buffer.js:141:        createBufferedFunction(work) {
+baileys-lib/Utils/identity-change-handler.js:13:    ctx.logger.info({ jid: from }, 'identity changed');
+baileys-lib/Utils/identity-change-handler.js:21:        ctx.logger.info({ jid: from }, 'self primary identity changed');
+baileys-lib/Utils/event-buffer.d.ts:19:    createBufferedFunction<A extends any[], T>(work: (...args: A) => Promise<T>): (...args: A) => Promise<T>;
+baileys-lib/Socket/index.d.ts:220:        createBufferedFunction<A extends any[], T>(work: (...args: A) => Promise<T>): (...args: A) => Promise<T>;
+baileys-lib/Socket/groups.d.ts:120:        createBufferedFunction<A extends any[], T>(work: (...args: A) => Promise<T>): (...args: A) => Promise<T>;
+baileys-lib/Socket/business.d.ts:178:        createBufferedFunction<A extends any[], T>(work: (...args: A) => Promise<T>): (...args: A) => Promise<T>;
+baileys-lib/Socket/communities.d.ts:233:        createBufferedFunction<A extends any[], T>(work: (...args: A) => Promise<T>): (...args: A) => Promise<T>;
+baileys-lib/Socket/chats.js:410:    const resyncAppState = ev.createBufferedFunction(async (collections, isInitialSync) => {
+baileys-lib/Socket/chats.js:917:    const upsertMessage = ev.createBufferedFunction(async (msg, type) => {
+baileys-lib/Socket/chats.js:1076:        ev.buffer();
+baileys-lib/Socket/communities.js:319:        communityAcceptInviteV4: ev.createBufferedFunction(async (key, inviteMessage) => {
+baileys-lib/Socket/newsletter.d.ts:130:        createBufferedFunction<A extends any[], T>(work: (...args: A) => Promise<T>): (...args: A) => Promise<T>;
+baileys-lib/Socket/socket.js:22:    const { waWebSocketUrl, connectTimeoutMs, logger, keepAliveIntervalMs, browser, auth: authState, printQRInTerminal, defaultQueryTimeoutMs, transactionOpts, qrTimeout, makeSignalRepository } = config;
+baileys-lib/Socket/socket.js:86:    const waitForMessage = async (msgId, timeoutMs = defaultQueryTimeoutMs) => {
+baileys-lib/Socket/socket.js:826:            ev.buffer();
+baileys-lib/Socket/chats.d.ts:86:        createBufferedFunction<A extends any[], T>(work: (...args: A) => Promise<T>): (...args: A) => Promise<T>;
+baileys-lib/Socket/groups.js:203:        groupAcceptInviteV4: ev.createBufferedFunction(async (key, inviteMessage) => {
+baileys-lib/Socket/messages-recv.js:600:     * Fire-and-forget tctoken re-issuance after a peer's device identity changed.
+baileys-lib/Socket/messages-recv.js:613:            logger.debug({ jid: normalizedJid, senderTimestamp: senderTs }, 'identity changed, re-issuing tctoken');
+baileys-lib/Socket/messages-recv.js:1650:        ev.buffer();
+baileys-lib/Socket/socket.d.ts:19:        createBufferedFunction<A extends any[], T>(work: (...args: A) => Promise<T>): (...args: A) => Promise<T>;
+baileys-lib/Socket/messages-send.d.ts:160:        createBufferedFunction<A extends any[], T>(work: (...args: A) => Promise<T>): (...args: A) => Promise<T>;
+baileys-lib/Socket/messages-recv.d.ts:164:        createBufferedFunction<A extends any[], T>(work: (...args: A) => Promise<T>): (...args: A) => Promise<T>;
+baileys-lib/Types/Socket.d.ts:39:    defaultQueryTimeoutMs: number | undefined;
+baileys-lib/Defaults/index.js:56:    defaultQueryTimeoutMs: 60000,
