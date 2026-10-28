@@ -158,3 +158,17 @@ index f2003ac00ef223468c432a1bbe0a0eb02c1453b2..d0f830b59daccf4c4865bbed90592051
      };
      const handleCall = async (node) => {
          try {
+diff --git a/lib/Utils/event-buffer.js b/lib/Utils/event-buffer.js
+index 9b32e6f..4e6cf30 100644
+--- a/lib/Utils/event-buffer.js
++++ b/lib/Utils/event-buffer.js
+@@ -31,7 +31,8 @@ export const makeEventBuffer = (logger) => {
+     let flushPendingTimeout = null; // Add a specific timer for the debounced flush to prevent leak
+     let bufferCount = 0;
+     const MAX_HISTORY_CACHE_SIZE = 10000; // Limit the history cache size to prevent memory bloat
+-    const BUFFER_TIMEOUT_MS = 30000; // 30 seconds
++    // Patched: a slow app-state sync must not hold incoming messages for 30 s.
++    const BUFFER_TIMEOUT_MS = 3000;
+     // take the generic event and fire it as a baileys event
+     ev.on('event', (map) => {
+         for (const event in map) {
