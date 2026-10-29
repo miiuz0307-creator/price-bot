@@ -1,5 +1,37 @@
+diff --git a/lib/Socket/chats.js b/lib/Socket/chats.js
+index 711e7f1..aa7ebf5 100644
+--- a/lib/Socket/chats.js
++++ b/lib/Socket/chats.js
+@@ -35,7 +35,26 @@ export const makeChatsSocket = (config) => {
+     };
+     let syncState = SyncState.Connecting;
+     /** this mutex ensures that messages are processed in order */
+-    const messageMutex = makeMutex();
++    // Patched: report who holds the message lock for long (it delays every incoming message).
++    const rawMessageMutex = makeMutex();
++    const messageMutex = {
++        mutex: (code) => {
++            const caller = (new Error().stack || '').split('\n').slice(2, 5).map(line => line.trim()).join(' | ');
++            const queuedAt = Date.now();
++            return rawMessageMutex.mutex(async () => {
++                const startedAt = Date.now();
++                try {
++                    return await code();
++                }
++                finally {
++                    const heldMs = Date.now() - startedAt;
++                    if (heldMs > 3000) {
++                        logger.warn({ heldMs, waitedMs: startedAt - queuedAt, caller }, 'message lock held for long');
++                    }
++                }
++            });
++        }
++    };
+     /** this mutex ensures that receipts are processed in order */
+     const receiptMutex = makeMutex();
+     /** this mutex ensures that app state patches are processed in order */
 diff --git a/lib/Socket/messages-recv.js b/lib/Socket/messages-recv.js
-index f2003ac00ef223468c432a1bbe0a0eb02c1453b2..d0f830b59daccf4c4865bbed905920512cd5031d 100644
+index f2003ac..9f496f2 100644
 --- a/lib/Socket/messages-recv.js
 +++ b/lib/Socket/messages-recv.js
 @@ -6,7 +6,6 @@ import { proto } from '../../WAProto/index.js';
@@ -101,15 +133,29 @@ index f2003ac00ef223468c432a1bbe0a0eb02c1453b2..d0f830b59daccf4c4865bbed90592051
      const msgRetryCache = config.msgRetryCounterCache ||
          new NodeCache({
              stdTTL: DEFAULT_CACHE_TTLS.MSG_RETRY, // 1 hour
-@@ -1272,6 +1351,7 @@ export const makeMessagesRecvSocket = (config) => {
+@@ -1272,6 +1351,9 @@ export const makeMessagesRecvSocket = (config) => {
              return;
          }
          let acked = false;
 +        let retryQueued = false;
++        // Patched: timing of each step, logged when a message is slow to process.
++        const timing = { queuedAt: Date.now(), startedAt: 0, decryptMs: 0, receiptMs: 0, upsertMs: 0 };
          try {
              const { fullMessage: msg, category, author, decrypt } = decryptMessageNode(node, authState.creds.me.id, authState.creds.me.lid || '', signalRepository, logger);
              const alt = msg.key.participantAlt || msg.key.remoteJidAlt;
-@@ -1368,25 +1448,16 @@ export const makeMessagesRecvSocket = (config) => {
+@@ -1290,8 +1372,11 @@ export const makeMessagesRecvSocket = (config) => {
+                     await signalRepository.migrateSession(alt, primaryJid);
+                 }
+             }
++            timing.lidMs = Date.now() - timing.queuedAt;
+             await messageMutex.mutex(async () => {
++                timing.startedAt = Date.now();
+                 await decrypt();
++                timing.decryptMs = Date.now() - timing.startedAt;
+                 if (msg.key?.remoteJid && msg.key?.id && msg.message && messageRetryManager) {
+                     messageRetryManager.addRecentMessage(msg.key.remoteJid, msg.key.id, msg.message);
+                 }
+@@ -1368,25 +1453,16 @@ export const makeMessagesRecvSocket = (config) => {
                              }
                          }
                          logger.debug('[handleMessage] Attempting retry request for failed decryption');
@@ -144,7 +190,32 @@ index f2003ac00ef223468c432a1bbe0a0eb02c1453b2..d0f830b59daccf4c4865bbed90592051
                      }
                  }
                  else {
-@@ -1438,6 +1509,13 @@ export const makeMessagesRecvSocket = (config) => {
+@@ -1414,7 +1490,9 @@ export const makeMessagesRecvSocket = (config) => {
+                             type = 'inactive';
+                         }
+                         acked = true;
++                        const receiptStartedAt = Date.now();
+                         await sendReceipt(msg.key.remoteJid, participant, [msg.key.id], type);
++                        timing.receiptMs = Date.now() - receiptStartedAt;
+                         // send ack for history message
+                         const isAnyHistoryMsg = getHistoryMsg(msg.message);
+                         if (isAnyHistoryMsg) {
+@@ -1429,8 +1507,14 @@ export const makeMessagesRecvSocket = (config) => {
+                     }
+                 }
+                 cleanMessage(msg, authState.creds.me.id, authState.creds.me.lid);
++                const upsertStartedAt = Date.now();
+                 await upsertMessage(msg, node.attrs.offline ? 'append' : 'notify');
++                timing.upsertMs = Date.now() - upsertStartedAt;
+             });
++            const totalMs = Date.now() - timing.queuedAt;
++            if (totalMs > 3000) {
++                logger.warn({ msgId: node.attrs.id, from: node.attrs.from, type: node.attrs.type, totalMs, lidMs: timing.lidMs, mutexWaitMs: timing.startedAt - timing.queuedAt - (timing.lidMs || 0), decryptMs: timing.decryptMs, receiptMs: timing.receiptMs, upsertMs: timing.upsertMs, stub: msg.messageStubType, protocol: msg.message?.protocolMessage?.type }, 'slow message processing');
++            }
+         }
+         catch (error) {
+             logger.error({ error, node: binaryNodeToString(node) }, 'error in handling message');
+@@ -1438,6 +1522,13 @@ export const makeMessagesRecvSocket = (config) => {
                  await sendMessageAck(node, NACK_REASONS.UnhandledError).catch(ackErr => logger.error({ ackErr }, 'failed to ack message after error'));
              }
          }
