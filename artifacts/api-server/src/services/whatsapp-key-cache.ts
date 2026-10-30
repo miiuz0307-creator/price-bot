@@ -8,14 +8,30 @@ import {
  * Adds Baileys' in-memory key cache without allowing its eager cache updates
  * to become visible until the backing store has completed the write.
  */
+export type SlowKeyStoreReport = {
+  operation: "get" | "set" | "clear"; queueWaitMs: number; runMs: number; diskMs: number;
+  type?: string; count: number; queueDepth: number;
+};
+
 export function makeSafeCacheableSignalKeyStore(
   store: SignalKeyStore | SignalKeyStoreWithTransaction,
+  onSlow?: (report: SlowKeyStoreReport) => void,
 ): SignalKeyStore {
+  // Time spent in the backing (disk) store during the current operation.
+  let diskMs = 0;
+  const timedBacking = <A extends unknown[], R>(fn: (...args: A) => R | Promise<R>) => async (...args: A): Promise<R> => {
+    const startedAt = Date.now();
+    try {
+      return await fn(...args);
+    } finally {
+      diskMs += Date.now() - startedAt;
+    }
+  };
   // Do not expose clear to Baileys' cache wrapper: its clear() also invokes
   // store.clear(), which would erase persistent authentication state.
   const cacheBacking: SignalKeyStore = {
-    get: store.get.bind(store),
-    set: store.set.bind(store),
+    get: timedBacking(store.get.bind(store)) as SignalKeyStore["get"],
+    set: timedBacking(store.set.bind(store)) as SignalKeyStore["set"],
   };
   // Keep Baileys' default cache options (including useClones: false). The
   // multi-file auth adapter reconstructs app-state keys with
@@ -34,8 +50,28 @@ export function makeSafeCacheableSignalKeyStore(
   // store. Recover the tail after either outcome so one rejection cannot
   // prevent later operations from running.
   let tail: Promise<void> = Promise.resolve();
-  const serialize = <T>(operation: () => Promise<T>): Promise<T> => {
-    const result = tail.then(operation);
+  let queueDepth = 0;
+  const serialize = <T>(operation: () => Promise<T>, describe?: () => Omit<SlowKeyStoreReport, "queueWaitMs" | "runMs" | "diskMs" | "queueDepth">): Promise<T> => {
+    const queuedAt = Date.now();
+    const depthAtQueue = ++queueDepth;
+    const result = tail.then(async () => {
+      const startedAt = Date.now();
+      diskMs = 0;
+      try {
+        return await operation();
+      } finally {
+        queueDepth--;
+        const runMs = Date.now() - startedAt;
+        const queueWaitMs = startedAt - queuedAt;
+        if (onSlow && describe && (runMs > 2000 || queueWaitMs > 5000)) {
+          try {
+            onSlow({ ...describe(), queueWaitMs, runMs, diskMs, queueDepth: depthAtQueue });
+          } catch {
+            // Reporting must never affect key storage.
+          }
+        }
+      }
+    });
     tail = result.then(
       () => undefined,
       () => undefined,
@@ -93,7 +129,7 @@ export function makeSafeCacheableSignalKeyStore(
       return serialize(async () => {
         assertCacheAvailable();
         return cachedStore.get(type, ids);
-      });
+      }, () => ({ operation: "get", type, count: ids.length }));
     },
     set(data) {
       return serialize(async () => {
@@ -120,7 +156,7 @@ export function makeSafeCacheableSignalKeyStore(
         if (containsDeletion(data)) {
           await invalidateCache();
         }
-      });
+      }, () => ({ operation: "set", type: Object.keys(data).join(","), count: Object.values(data).reduce((total, category) => total + Object.keys(category ?? {}).length, 0) }));
     },
     clear() {
       // This only clears the in-memory Baileys cache; cacheBacking has no

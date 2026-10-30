@@ -168,7 +168,10 @@ class WhatsAppWebManager {
     client = makeWASocket({
       version,
       // Cache hot keys only after durable writes, using the same auth files.
-      auth: { creds: authState.creds, keys: makeSafeCacheableSignalKeyStore(authState.keys) },
+      auth: {
+        creds: authState.creds,
+        keys: makeSafeCacheableSignalKeyStore(authState.keys, (report) => providerLogger.warn(report, "slow WhatsApp key store operation")),
+      },
       printQRInTerminal: false, markOnlineOnConnect: false,
       syncFullHistory: false, generateHighQualityLinkPreview: false,
       cachedGroupMetadata: (jid) => this.cachedGroupMetadata(connection, client, jid),
