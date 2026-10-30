@@ -160,16 +160,16 @@ test("never shows a group quote below the current catalog price for that vehicle
   assert.equal(isSurgeAboveCatalog({ price: 250, vehicleType: "regular" }, { ...catalog, priceMatrix: [260, 450, 320] }), false);
 });
 
-test("surge quotes expire after ten minutes, including offers stored with the former thirty-minute expiry", () => {
+test("surge quotes expire after two minutes, including offers stored with a longer former expiry", () => {
   const observedAt = new Date("2026-09-29T00:00:00.000Z");
   const oldOffer = { observedAt, expiresAt: new Date("2026-09-29T00:30:00.000Z") };
-  assert.equal(surgeLifetimeMs, 10 * 60_000);
-  assert.equal(surgeEffectiveExpiry(oldOffer).toISOString(), "2026-09-29T00:10:00.000Z");
-  assert.equal(isSurgeActiveAt(oldOffer, new Date("2026-09-29T00:09:59.999Z")), true);
-  assert.equal(isSurgeActiveAt(oldOffer, new Date("2026-09-29T00:10:00.000Z")), false);
-  const stoppedOffer = { observedAt, expiresAt: new Date("2026-09-29T00:03:00.000Z") };
-  assert.equal(surgeEffectiveExpiry(stoppedOffer).toISOString(), "2026-09-29T00:03:00.000Z");
-  assert.equal(isSurgeActiveAt(stoppedOffer, new Date("2026-09-29T00:03:00.000Z")), false);
+  assert.equal(surgeLifetimeMs, 2 * 60_000);
+  assert.equal(surgeEffectiveExpiry(oldOffer).toISOString(), "2026-09-29T00:02:00.000Z");
+  assert.equal(isSurgeActiveAt(oldOffer, new Date("2026-09-29T00:01:59.999Z")), true);
+  assert.equal(isSurgeActiveAt(oldOffer, new Date("2026-09-29T00:02:00.000Z")), false);
+  const stoppedOffer = { observedAt, expiresAt: new Date("2026-09-29T00:01:00.000Z") };
+  assert.equal(surgeEffectiveExpiry(stoppedOffer).toISOString(), "2026-09-29T00:01:00.000Z");
+  assert.equal(isSurgeActiveAt(stoppedOffer, new Date("2026-09-29T00:01:00.000Z")), false);
 });
 
 test("rejects requests, phone numbers and unknown or ambiguous routes", () => {

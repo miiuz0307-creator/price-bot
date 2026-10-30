@@ -2,7 +2,7 @@ import { expandCustomAbbreviations, isBuiltInAbbreviation, normalizeSearchText, 
 
 type Product = { id: number; name: string; aliases: string[]; active: boolean; price: string; priceMatrix: number[]; currency: string };
 
-export const surgeLifetimeMs = 10 * 60_000;
+export const surgeLifetimeMs = 2 * 60_000;
 
 export function surgeEffectiveExpiry(offer: { observedAt: Date; expiresAt: Date }) {
   return new Date(Math.min(offer.expiresAt.getTime(), offer.observedAt.getTime() + surgeLifetimeMs));

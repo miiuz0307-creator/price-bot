@@ -64,7 +64,7 @@ export default function SurgePage() {
       <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold">
         {Object.entries(vehicleLabels).map(([type, label]) => <span key={type} className="rounded-lg border border-border bg-card px-3 py-2">{label}</span>)}
       </div>
-      <p className="mt-3 text-xs leading-5 text-muted-foreground">למשל, „6 מרווח” נקלט כמחיר ל־6 מקומות מרווח; „סייאנה” ו„סיינה” נקלטים כמחיר ל־7 מקומות. מחיר גבוה ממחירון למסלול מזוהה יוצג ל־10 דקות בלי לשנות את המחירון הקבוע.</p>
+      <p className="mt-3 text-xs leading-5 text-muted-foreground">למשל, „6 מרווח” נקלט כמחיר ל־6 מקומות מרווח; „סייאנה” ו„סיינה” נקלטים כמחיר ל־7 מקומות. מחיר גבוה ממחירון למסלול מזוהה יוצג ל־2 דקות בלי לשנות את המחירון הקבוע.</p>
     </header>
     {feedback && <p role="status" className="mb-5 rounded-xl bg-secondary px-4 py-3 text-sm font-bold">{feedback}</p>}
     {error && <p role="alert" className="mb-5 rounded-xl border border-destructive bg-card px-4 py-3 text-sm font-bold text-destructive">{error}</p>}
