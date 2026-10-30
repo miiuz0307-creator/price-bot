@@ -69,7 +69,7 @@ function makeBacking(initial = {}) {
 
 const testTimeoutMs = 5_000;
 
-test("caches hot reads, fetches multiple IDs together, and exposes newly set missing keys", { timeout: testTimeoutMs }, async () => {
+test("caches hot reads, fetches multiple IDs together, and exposes newly set keys", { timeout: testTimeoutMs }, async () => {
   const backing = makeBacking({
     session: { first: "persisted-first", second: "persisted-second" },
   });
@@ -81,109 +81,78 @@ test("caches hot reads, fetches multiple IDs together, and exposes newly set mis
   });
   assert.equal(backing.getCalls, 1);
 
-  assert.deepEqual(await keys.get("session", ["first", "second"]), {
+  assert.deepEqual(await keys.get("session", ["first", "second", "missing"]), {
     first: "persisted-first",
     second: "persisted-second",
   });
-  assert.equal(backing.getCalls, 1, "hot keys should be served from Baileys' cache");
+  assert.equal(backing.getCalls, 1, "hot keys (and known-absent keys) are served from memory");
 
-  await keys.set({ session: { missing: "newly-persisted" } });
-  assert.deepEqual(await keys.get("session", ["missing"]), {
-    missing: "newly-persisted",
-  });
-  assert.equal(backing.read("session", "missing"), "newly-persisted");
+  await keys.set({ session: { missing: "newly-set" } });
+  assert.deepEqual(await keys.get("session", ["missing"]), { missing: "newly-set" });
+  await keys.flush();
+  assert.equal(backing.read("session", "missing"), "newly-set");
 });
 
-test("waits for durable writes and deletion/clear never clear persistent auth", { timeout: testTimeoutMs }, async () => {
+test("writes return immediately, reach the disk in the background, and flush() waits for them", { timeout: testTimeoutMs }, async () => {
   const backing = makeBacking();
   const originalSet = backing.store.set;
-  const enteredBackingSet = deferred();
   const finishBackingSet = deferred();
   backing.store.set = async (data) => {
-    enteredBackingSet.resolve();
     await finishBackingSet.promise;
     await originalSet(data);
   };
   const keys = makeSafeCacheableSignalKeyStore(backing.store);
 
-  let writeResolved = false;
-  const write = keys
-    .set({ session: { record: "durable-value" } })
-    .then(() => {
-      writeResolved = true;
-    });
-  await enteredBackingSet.promise;
-  assert.equal(writeResolved, false);
-  assert.equal(backing.read("session", "record"), undefined);
+  await keys.set({ session: { record: "value-1" } });
+  await keys.set({ session: { record: "value-2" } });
+  assert.deepEqual(await keys.get("session", ["record"]), { record: "value-2" }, "newest value is visible at once");
+  assert.equal(backing.read("session", "record"), undefined, "disk not written yet");
 
+  let flushed = false;
+  const flushing = keys.flush().then(() => { flushed = true; });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(flushed, false);
   finishBackingSet.resolve();
-  await write;
-  assert.equal(writeResolved, true);
-  assert.equal(backing.read("session", "record"), "durable-value");
-
-  backing.store.set = originalSet;
-  assert.deepEqual(await keys.get("session", ["record"]), {
-    record: "durable-value",
-  });
-  await keys.set({ session: { record: null } });
-  assert.equal(backing.read("session", "record"), undefined);
-  assert.deepEqual(await keys.get("session", ["record"]), {});
-
-  await keys.set({ session: { retained: "still-on-disk" } });
-  await keys.get("session", ["retained"]);
-  await keys.clear();
-  assert.equal(backing.clearCalls, 0, "cache clearing must not call backing clear");
-  assert.equal(backing.read("session", "retained"), "still-on-disk");
-  assert.deepEqual(await keys.get("session", ["retained"]), {
-    retained: "still-on-disk",
-  });
+  await flushing;
+  assert.equal(backing.read("session", "record"), "value-2");
 });
 
-test("serializes reads through failed partial writes and reloads backing values", { timeout: testTimeoutMs }, async () => {
-  const backing = makeBacking({
-    session: { first: "old-first", second: "old-second" },
-  });
-  const originalSet = backing.store.set;
-  const enteredBackingSet = deferred();
-  const releaseFailedWrite = deferred();
-  const writeError = new Error("backing write failed");
-  let failNextWrite = false;
-  backing.store.set = async (data) => {
-    if (!failNextWrite) {
-      return originalSet(data);
-    }
-    backing.put("session", "first", data.session.first);
-    enteredBackingSet.resolve();
-    await releaseFailedWrite.promise;
-    throw writeError;
-  };
+test("a deletion hides the key at once and is never undone by a slower disk read", { timeout: testTimeoutMs }, async () => {
+  const backing = makeBacking({ session: { record: "on-disk" } });
   const keys = makeSafeCacheableSignalKeyStore(backing.store);
-  await keys.get("session", ["first", "second"]);
+  assert.deepEqual(await keys.get("session", ["record"]), { record: "on-disk" });
+  await keys.set({ session: { record: null } });
+  assert.deepEqual(await keys.get("session", ["record"]), {});
+  await keys.flush();
+  assert.equal(backing.read("session", "record"), undefined);
+  assert.deepEqual(await keys.get("session", ["record"]), {});
+});
 
-  failNextWrite = true;
-  const write = keys.set({
-    session: { first: "partial-disk-value", second: "uncommitted-value" },
-  });
-  await enteredBackingSet.promise;
+test("a failed disk write is retried and newer writes win", { timeout: testTimeoutMs }, async () => {
+  const backing = makeBacking();
+  const originalSet = backing.store.set;
+  let failures = 1;
+  backing.store.set = async (data) => {
+    if (failures-- > 0) throw new Error("disk busy");
+    await originalSet(data);
+  };
+  const reports = [];
+  const keys = makeSafeCacheableSignalKeyStore(backing.store, (report) => reports.push(report));
+  await keys.set({ session: { record: "first" } });
+  await keys.set({ session: { record: "second" } });
+  await keys.flush();
+  assert.equal(backing.read("session", "record"), "second");
+  assert.ok(reports.some((report) => String(report.type).startsWith("failed")));
+});
 
-  let readResolved = false;
-  const read = keys.get("session", ["first", "second"]).then((result) => {
-    readResolved = true;
-    return result;
-  });
-  await Promise.resolve();
-  assert.equal(readResolved, false, "a read must wait behind the in-flight write");
-
-  releaseFailedWrite.resolve();
-  await assert.rejects(write, (error) => error === writeError);
-  assert.deepEqual(await read, {
-    first: "partial-disk-value",
-    second: "old-second",
-  });
-
-  failNextWrite = false;
-  await keys.set({ session: { third: "future-write" } });
-  assert.equal(backing.read("session", "third"), "future-write");
+test("clear() only forgets memory and never clears persistent auth", { timeout: testTimeoutMs }, async () => {
+  const backing = makeBacking();
+  const keys = makeSafeCacheableSignalKeyStore(backing.store);
+  await keys.set({ session: { retained: "still-on-disk" } });
+  await keys.clear();
+  assert.equal(backing.clearCalls, 0);
+  assert.equal(backing.read("session", "retained"), "still-on-disk");
+  assert.deepEqual(await keys.get("session", ["retained"]), { retained: "still-on-disk" });
 });
 
 test("a failed backing read does not poison subsequent cache operations", { timeout: testTimeoutMs }, async () => {

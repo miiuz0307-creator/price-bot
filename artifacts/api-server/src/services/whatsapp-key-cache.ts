@@ -1,169 +1,160 @@
-import {
-  makeCacheableSignalKeyStore,
-  type SignalKeyStore,
-  type SignalKeyStoreWithTransaction,
-} from "@whiskeysockets/baileys";
+import type { SignalKeyStore, SignalKeyStoreWithTransaction } from "@whiskeysockets/baileys";
 
 /**
- * Adds Baileys' in-memory key cache without allowing its eager cache updates
- * to become visible until the backing store has completed the write.
+ * In-memory key store over the multi-file auth state, with write-behind.
+ *
+ * Every incoming WhatsApp message updates encryption keys. Waiting for the
+ * disk on each update capped the bot at ~3 messages/second (≈0.35 s per
+ * decrypt on the hosting volume), so busy groups built a queue of minutes and
+ * price requests waited behind it. Writes now land in memory immediately and
+ * are persisted to disk in the background, in order, merged, and flushed on
+ * shutdown. Reads see the newest value (memory first, then disk).
+ *
+ * Deletions are kept as "absent" in memory, so a deleted key is never
+ * resurrected from disk while its removal is still being written.
  */
 export type SlowKeyStoreReport = {
-  operation: "get" | "set" | "clear"; queueWaitMs: number; runMs: number; diskMs: number;
+  operation: "get" | "set" | "flush"; queueWaitMs: number; runMs: number; diskMs: number;
   type?: string; count: number; queueDepth: number;
 };
+
+export type FlushableSignalKeyStore = SignalKeyStore & {
+  /** Resolves when every write made so far is on disk. */
+  flush(): Promise<void>;
+};
+
+type Entry = { value: unknown; touchedAt: number };
+
+const memoryLifetimeMs = 30 * 60_000;
+const maxMemoryEntries = 50_000;
+
+const liveStores = new Set<FlushableSignalKeyStore>();
+
+/** Persist pending key writes of every connection (called on shutdown). */
+export async function flushAllKeyStores(timeoutMs = 8_000) {
+  await Promise.race([
+    Promise.allSettled([...liveStores].map((store) => store.flush())),
+    new Promise((resolve) => setTimeout(resolve, timeoutMs).unref?.()),
+  ]);
+}
 
 export function makeSafeCacheableSignalKeyStore(
   store: SignalKeyStore | SignalKeyStoreWithTransaction,
   onSlow?: (report: SlowKeyStoreReport) => void,
-): SignalKeyStore {
-  // Time spent in the backing (disk) store during the current operation.
-  let diskMs = 0;
-  const timedBacking = <A extends unknown[], R>(fn: (...args: A) => R | Promise<R>) => async (...args: A): Promise<R> => {
-    const startedAt = Date.now();
+): FlushableSignalKeyStore {
+  const key = (type: string, id: string) => `${type}\u0000${id}`;
+  /** Known values (null = known to be absent). */
+  const memory = new Map<string, Entry>();
+  /** Writes not yet on disk, in arrival order, merged per key. */
+  let pending = new Map<string, { type: string; id: string; value: unknown }>();
+  let writer: Promise<void> | null = null;
+
+  const report = (entry: SlowKeyStoreReport) => {
     try {
-      return await fn(...args);
-    } finally {
-      diskMs += Date.now() - startedAt;
+      onSlow?.(entry);
+    } catch {
+      // Reporting must never affect key storage.
     }
   };
-  // Do not expose clear to Baileys' cache wrapper: its clear() also invokes
-  // store.clear(), which would erase persistent authentication state.
-  const cacheBacking: SignalKeyStore = {
-    get: timedBacking(store.get.bind(store)) as SignalKeyStore["get"],
-    set: timedBacking(store.set.bind(store)) as SignalKeyStore["set"],
-  };
-  // Keep Baileys' default cache options (including useClones: false). The
-  // multi-file auth adapter reconstructs app-state keys with
-  // proto.Message.AppStateSyncKeyData.fromObject after JSON decoding; generic
-  // cloning here could erase that protobuf prototype. As with Baileys' own
-  // cache, returned key objects are shared references: callers that mutate a
-  // key in place without set() can make the memory value diverge from disk.
-  // The adapter itself serializes on write and reconstructs on read rather
-  // than mutating returned keys in place.
-  const createCachedStore = () => makeCacheableSignalKeyStore(cacheBacking);
-  let cachedStore = createCachedStore();
-  let cacheUnavailable = false;
-  let cacheUnavailableError: unknown;
 
-  // Serialize reads and writes around Baileys' cache as well as the backing
-  // store. Recover the tail after either outcome so one rejection cannot
-  // prevent later operations from running.
-  let tail: Promise<void> = Promise.resolve();
-  let queueDepth = 0;
-  const serialize = <T>(operation: () => Promise<T>, describe?: () => Omit<SlowKeyStoreReport, "queueWaitMs" | "runMs" | "diskMs" | "queueDepth">): Promise<T> => {
-    const queuedAt = Date.now();
-    const depthAtQueue = ++queueDepth;
-    const result = tail.then(async () => {
+  const remember = (type: string, id: string, value: unknown) => {
+    memory.set(key(type, id), { value, touchedAt: Date.now() });
+  };
+
+  const prune = () => {
+    if (memory.size <= maxMemoryEntries) return;
+    const cutoff = Date.now() - memoryLifetimeMs;
+    for (const [compound, entry] of memory) {
+      if (memory.size <= maxMemoryEntries * 0.8) break;
+      if (entry.touchedAt < cutoff && !pending.has(compound)) memory.delete(compound);
+    }
+  };
+
+  const writeLoop = async () => {
+    let delayMs = 0;
+    while (pending.size) {
+      if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
+      const batch = pending;
+      pending = new Map();
+      const data: Record<string, Record<string, unknown>> = {};
+      for (const { type, id, value } of batch.values()) (data[type] ??= {})[id] = value;
       const startedAt = Date.now();
-      diskMs = 0;
       try {
-        return await operation();
-      } finally {
-        queueDepth--;
+        await store.set(data as Parameters<SignalKeyStore["set"]>[0]);
+        delayMs = 0;
         const runMs = Date.now() - startedAt;
-        const queueWaitMs = startedAt - queuedAt;
-        if (onSlow && describe && (runMs > 2000 || queueWaitMs > 5000)) {
-          try {
-            onSlow({ ...describe(), queueWaitMs, runMs, diskMs, queueDepth: depthAtQueue });
-          } catch {
-            // Reporting must never affect key storage.
+        if (runMs > 2000) report({ operation: "flush", queueWaitMs: 0, runMs, diskMs: runMs, type: Object.keys(data).join(","), count: batch.size, queueDepth: pending.size });
+      } catch (error) {
+        // Put the failed batch back (newer writes made meanwhile win) and retry.
+        for (const [compound, write] of batch) if (!pending.has(compound)) pending.set(compound, write);
+        delayMs = Math.min((delayMs || 500) * 2, 10_000);
+        report({ operation: "flush", queueWaitMs: 0, runMs: Date.now() - startedAt, diskMs: Date.now() - startedAt, type: `failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, 200), count: batch.size, queueDepth: pending.size });
+      }
+    }
+  };
+
+  const startWriter = () => {
+    if (writer) return writer;
+    writer = writeLoop().finally(() => {
+      writer = null;
+      if (pending.size) void startWriter();
+    });
+    return writer;
+  };
+
+  const keyStore: FlushableSignalKeyStore = {
+    async get(type, ids) {
+      const result: Record<string, unknown> = {};
+      const missing: string[] = [];
+      for (const id of ids) {
+        const entry = memory.get(key(type, id));
+        if (!entry) {
+          missing.push(id);
+          continue;
+        }
+        entry.touchedAt = Date.now();
+        if (entry.value !== null && entry.value !== undefined) result[id] = entry.value;
+      }
+      if (missing.length) {
+        const startedAt = Date.now();
+        const fromDisk = await store.get(type, missing) as Record<string, unknown>;
+        const runMs = Date.now() - startedAt;
+        if (runMs > 2000) report({ operation: "get", queueWaitMs: 0, runMs, diskMs: runMs, type, count: missing.length, queueDepth: pending.size });
+        for (const id of missing) {
+          // A write made while the disk read was running is newer: keep it.
+          const current = memory.get(key(type, id));
+          if (current) {
+            if (current.value !== null && current.value !== undefined) result[id] = current.value;
+            continue;
           }
+          const value = fromDisk?.[id];
+          remember(type, id, value ?? null);
+          if (value !== null && value !== undefined) result[id] = value;
+        }
+        prune();
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return result as any;
+    },
+    async set(data) {
+      for (const [type, values] of Object.entries(data)) {
+        for (const [id, value] of Object.entries(values ?? {})) {
+          remember(type, id, value ?? null);
+          pending.set(key(type, id), { type, id, value: value ?? null });
         }
       }
-    });
-    tail = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
-  };
-
-  const assertCacheAvailable = () => {
-    if (cacheUnavailable) {
-      throw cacheUnavailableError;
-    }
-  };
-
-  const replaceCachedStore = () => {
-    try {
-      cachedStore = createCachedStore();
-      cacheUnavailable = false;
-      cacheUnavailableError = undefined;
-    } catch (error) {
-      // Fail closed if a fresh official cache cannot be constructed: never
-      // fall back to an instance that might contain uncommitted values.
-      cacheUnavailable = true;
-      cacheUnavailableError = error;
-      throw error;
-    }
-  };
-
-  const invalidateCache = async () => {
-    if (cacheUnavailable) {
-      replaceCachedStore();
-      return;
-    }
-    if (typeof cachedStore.clear !== "function") {
-      replaceCachedStore();
-      return;
-    }
-    try {
-      await cachedStore.clear();
-    } catch {
-      // Discard the cache instance on clear failure. A replacement ensures
-      // that no stale/uncommitted entry remains reachable; if replacement
-      // fails, replaceCachedStore marks the wrapper fail-closed.
-      replaceCachedStore();
-    }
-  };
-
-  const containsDeletion = (data: Parameters<SignalKeyStore["set"]>[0]) =>
-    Object.values(data).some(
-      (category) =>
-        category && Object.values(category).some((value) => value === null),
-    );
-
-  const safeStore: SignalKeyStore = {
-    get<T extends Parameters<SignalKeyStore["get"]>[0]>(type: T, ids: string[]) {
-      return serialize(async () => {
-        assertCacheAvailable();
-        return cachedStore.get(type, ids);
-      }, () => ({ operation: "get", type, count: ids.length }));
+      void startWriter();
     },
-    set(data) {
-      return serialize(async () => {
-        assertCacheAvailable();
-        try {
-          // Baileys' cache writes entries before awaiting store.set().
-          await cachedStore.set(data);
-        } catch (error) {
-          // Keep the original backing-store error and do not release the
-          // outer lock until the cache no longer contains uncommitted values.
-          // If invalidation and replacement both fail, the wrapper is marked
-          // unavailable so later reads/writes cannot reach the stale cache.
-          try {
-            await invalidateCache();
-          } catch {
-            // Preserve the exact backing error; invalidateCache has failed
-            // closed instead of retaining access to the old cache instance.
-          }
-          throw error;
-        }
-
-        // Baileys caches null deletion markers as ordinary values. Drop the
-        // memory cache after a successful delete so reads reflect absence.
-        if (containsDeletion(data)) {
-          await invalidateCache();
-        }
-      }, () => ({ operation: "set", type: Object.keys(data).join(","), count: Object.values(data).reduce((total, category) => total + Object.keys(category ?? {}).length, 0) }));
+    async clear() {
+      // Only forget memory; persistent authentication on disk stays untouched.
+      await keyStore.flush();
+      memory.clear();
     },
-    clear() {
-      // This only clears the in-memory Baileys cache; cacheBacking has no
-      // clear method, so persistent auth remains untouched.
-      return serialize(invalidateCache);
+    async flush() {
+      while (pending.size || writer) await startWriter();
     },
   };
 
-  return safeStore;
+  liveStores.add(keyStore);
+  return keyStore;
 }

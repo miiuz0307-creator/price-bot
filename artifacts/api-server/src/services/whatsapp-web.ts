@@ -8,7 +8,7 @@ import makeWASocket, {
 import QRCode from "qrcode";
 import { logger } from "../lib/logger";
 import { WhatsAppIngressTiming } from "./whatsapp-ingress-timing";
-import { makeSafeCacheableSignalKeyStore } from "./whatsapp-key-cache";
+import { flushAllKeyStores, makeSafeCacheableSignalKeyStore } from "./whatsapp-key-cache";
 
 export type WhatsAppConnectionState = "disconnected" | "initializing" | "qr_ready" | "pairing_code_ready" | "connected" | "error";
 export type IncomingWhatsAppMessage = { adminId: number; from: string; chatId: string; isGroup: boolean; body: string; sentAt?: number; isHistory?: boolean };
@@ -158,6 +158,8 @@ class WhatsAppWebManager {
     return request;
   }
   private async initialize(adminId: number, connection: Connection) {
+    // Keys from a previous socket may still be on their way to disk: persist them first.
+    await flushAllKeyStores();
     const { state: authState, saveCreds } = await useMultiFileAuthState(authPathFor(adminId));
     const { version } = await fetchLatestBaileysVersion();
     const providerLogger = logger.child({ provider: "baileys", adminId });

@@ -5,6 +5,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { whatsappWeb } from "./services/whatsapp-web";
 import { telegramBot } from "./services/telegram";
+import { flushAllKeyStores } from "./services/whatsapp-key-cache";
 
 // The hosting network has no IPv6 route to some services (Telegram): prefer IPv4.
 dns.setDefaultResultOrder("ipv4first");
@@ -54,6 +55,8 @@ async function shutdown(signal: string) {
   server.close();
   telegramBot.stop();
   await whatsappWeb.shutdown().catch((err) => logger.warn({ err }, "WhatsApp shutdown failed"));
+  // Encryption keys are written to disk in the background: persist the last ones.
+  await flushAllKeyStores().catch((err) => logger.warn({ err }, "Key store flush failed"));
   await pool.end().catch((err) => logger.warn({ err }, "Database pool shutdown failed"));
   process.exit(0);
 }
