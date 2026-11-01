@@ -3,7 +3,7 @@ import { View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
-import { createProduct, deleteLookupRequest, deleteProduct, updateProduct, useListProducts, type Product, type ProductInput } from '@workspace/api-client-react';
+import { createProduct, deleteLookupRequest, deleteProduct, draftProduct, updateProduct, useListProducts, type Product, type ProductInput } from '@workspace/api-client-react';
 import { useToast } from '@/components/Toast';
 import { BackHeader, Button, Card, Field, Footer, Row, Screen, Toggle, Txt } from '@/components/ui';
 import { errorMessage } from '@/lib/api';
@@ -56,6 +56,35 @@ export default function ProductEditScreen() {
   }, [params.id, params.name, params.query, params.matrix, params.distance, params.waitTime]);
 
   const set = (patch: Partial<Form>) => { setForm((current) => ({ ...current, ...patch })); setError(null); };
+
+  // Quick add: "from X to Y, price" — the rest is filled in from the catalog and Google Maps.
+  const [quick, setQuick] = useState({ origin: '', destination: '', price: '', roundTrip: '' });
+  const [quickNotes, setQuickNotes] = useState<string[]>([]);
+  const fill = useMutation({
+    mutationFn: async () => {
+      const price = Number(quick.price);
+      const roundTrip = quick.roundTrip.trim() ? Number(quick.roundTrip) : null;
+      if (!quick.origin.trim() || !quick.destination.trim() || !(price > 0) || (roundTrip !== null && !(roundTrip > 0))) throw new Error('מלאו מוצא, יעד ומחיר רכב רגיל.');
+      return draftProduct({ origin: quick.origin.trim(), destination: quick.destination.trim(), price, roundTripPrice: roundTrip });
+    },
+    onSuccess: (result) => {
+      const existing = result.existing ? products.data?.find((product) => product.id === result.existing!.id) : undefined;
+      set({
+        name: existing?.name ?? result.name,
+        matrix: Array.from({ length: 8 }, (_, index) => (result.priceMatrix[index] > 0 ? String(result.priceMatrix[index]) : '')),
+        distance: result.distance, duration: result.duration, level: result.level, waitTime: result.waitTime,
+        aliases: [...new Set([...(existing?.aliases ?? []), ...result.aliases])].join(', '),
+        ...(existing ? { active: existing.active, subtitle: existing.subtitle, notes: existing.notes, sections: existing.sections } : {}),
+      });
+      setQuickNotes([
+        result.exactMatch ? `שאר המחירים הועתקו מ־${result.similarRoutes} מסלולים במחירון עם אותו מחיר.` : 'אין במחירון מסלול עם בדיוק המחיר הזה — שאר המחירים חושבו לפי המסלולים הכי קרובים. כדאי לבדוק.',
+        result.mapsFound ? 'מרחק וזמן נלקחו מגוגל מפות.' : 'לא נמצאו מרחק וזמן בגוגל מפות — אפשר למלא ידנית.',
+        ...(existing ? [`„${existing.name}” כבר קיים במחירון — שמירה תעדכן אותו (לא ייווצר כפול).`] : []),
+        'בדקו את הפרטים ולחצו „הוספה למחירון”.',
+      ]);
+    },
+    onError: (failure) => setQuickNotes([failure instanceof Error && !('status' in failure) ? failure.message : errorMessage(failure)]),
+  });
 
   const save = useMutation({
     mutationFn: async () => {
@@ -128,6 +157,21 @@ export default function ProductEditScreen() {
       )}
     >
       <BackHeader title={editing ? 'עריכת מסלול' : 'מסלול חדש'} />
+      {!editing ? (
+        <Card style={{ gap: 10 }}>
+          <Txt variant="bodySemi">מילוי מהיר — מאיפה, לאן וכמה</Txt>
+          <Row gap={10}>
+            <Field label="מוצא" value={quick.origin} onChangeText={(origin) => setQuick({ ...quick, origin })} placeholder="באר שבע" style={{ flex: 1 }} />
+            <Field label="יעד" value={quick.destination} onChangeText={(destination) => setQuick({ ...quick, destination })} placeholder="תפרח" style={{ flex: 1 }} />
+          </Row>
+          <Row gap={10}>
+            <Field label="מחיר רכב רגיל" value={quick.price} onChangeText={(price) => setQuick({ ...quick, price: price.replace(/[^\d]/g, '') })} keyboardType="number-pad" placeholder="120" ltr style={{ flex: 1 }} />
+            <Field label="הלוך וחזור (לא חובה)" value={quick.roundTrip} onChangeText={(roundTrip) => setQuick({ ...quick, roundTrip: roundTrip.replace(/[^\d]/g, '') })} keyboardType="number-pad" placeholder="220" ltr style={{ flex: 1 }} />
+          </Row>
+          <Button title="מילוי אוטומטי של כל הפרטים" icon="zap" variant="soft" size="md" loading={fill.isPending} onPress={() => fill.mutate()} />
+          {quickNotes.map((note) => <Txt key={note} variant="caption" color={c.muted}>• {note}</Txt>)}
+        </Card>
+      ) : null}
       <Button title="הדבקת הודעת מחיר מ־WhatsApp" icon="clipboard" variant="soft" size="md" onPress={paste} />
 
       <Field label="שם המסלול" value={form.name} onChangeText={(name) => set({ name })} placeholder="למשל: בני ברק ⇔ ירושלים" />

@@ -75,6 +75,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Product"
+  /products/draft:
+    post:
+      operationId: draftProduct
+      tags: [products]
+      summary: Fill in a new route (prices, distance, time) from origin, destination and price — nothing is saved
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductDraftInput"
+      responses:
+        "200":
+          description: Suggested route details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductDraft"
   /products/{id}:
     patch:
       operationId: updateProduct
@@ -866,6 +884,42 @@ components:
           type: array
           items: { type: string }
         active: { type: boolean, default: true }
+    ProductDraftInput:
+      type: object
+      required: [origin, destination, price]
+      properties:
+        origin: { type: string, minLength: 1 }
+        destination: { type: string, minLength: 1 }
+        price: { type: number, minimum: 1 }
+        roundTripPrice: { type: ["number", "null"] }
+    ProductDraft:
+      type: object
+      required: [name, aliases, priceMatrix, distance, duration, level, waitTime, similarRoutes, exactMatch, mapsFound, existing]
+      properties:
+        name: { type: string }
+        aliases:
+          type: array
+          items: { type: string }
+        priceMatrix:
+          type: array
+          items: { type: number }
+        distance: { type: string }
+        duration: { type: string }
+        level: { type: string }
+        waitTime: { type: string }
+        similarRoutes: { type: integer }
+        exactMatch: { type: boolean }
+        mapsFound: { type: boolean }
+        existing:
+          anyOf:
+            - $ref: "#/components/schemas/ProductDraftExisting"
+            - type: "null"
+    ProductDraftExisting:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: integer }
+        name: { type: string }
     ProductUpdate:
       type: object
       properties:

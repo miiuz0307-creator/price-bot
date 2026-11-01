@@ -71,7 +71,7 @@ import {
 } from "@workspace/db";
 import { whatsappWeb, type IncomingWhatsAppMessage } from "../services/whatsapp-web";
 import { expandCustomAbbreviations, isBuiltInAbbreviation, normalizeSearchText, normalizedSearchVariants } from "../services/catalog-search";
-import { drivingDistanceKm, estimateReferenceRoute, estimatedPriceMatrix, estimatedWaitTime, formatRouteEstimate, isIntraCityRoute, parseUnlistedRoute, requiresManualCatalogPrice, resolveRouteAddresses } from "../services/route-estimate";
+import { drivingDistanceKm, drivingRouteDetails, draftFromCatalog, formatCatalogDistance, formatCatalogDuration, estimateReferenceRoute, estimatedPriceMatrix, estimatedWaitTime, formatRouteEstimate, isIntraCityRoute, parseUnlistedRoute, requiresManualCatalogPrice, resolveRouteAddresses } from "../services/route-estimate";
 import { formatBillingCalculation, parseBillingAmount } from "../services/billing-calculator";
 import { logger } from "../lib/logger";
 import { formatSurgePrice, isSurgeAboveCatalog, isSurgeActiveAt, matchSurgeProduct, matchesSurgeDirection, parseSurgeQuotes, sortSurgeOffers, surgeDirectionKey, surgeEffectiveExpiry, surgeLifetimeMs } from "../services/surge-pricing";
@@ -108,6 +108,52 @@ router.get("/products", async (_req, res, next) => {
   try {
     const rows = await db.select().from(priceBotProducts).orderBy(priceBotProducts.name);
     res.json(ListProductsResponse.parse(rows.map(productDto)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Fill in a new route from "origin, destination, price": the other vehicle prices,
+// price level and side wait come from catalog routes with the same price; distance and
+// time come from Google Maps. Nothing is saved — the manager checks and saves.
+router.post("/products/draft", requirePermission("catalog.edit"), async (req, res, next) => {
+  try {
+    const origin = String(req.body?.origin ?? "").trim().slice(0, 100);
+    const destination = String(req.body?.destination ?? "").trim().slice(0, 100);
+    const price = Math.round(Number(req.body?.price));
+    const roundTripRaw = req.body?.roundTripPrice;
+    const roundTrip = roundTripRaw === undefined || roundTripRaw === null || roundTripRaw === "" ? null : Math.round(Number(roundTripRaw));
+    if (!origin || !destination || !(price > 0) || (roundTrip !== null && !(roundTrip > 0))) {
+      res.status(400).json({ error: "מלאו מוצא, יעד ומחיר תקין." });
+      return;
+    }
+    const products = await db.select().from(priceBotProducts);
+    const draft = draftFromCatalog(price, roundTrip, products);
+    const name = `${origin} ⇔ ${destination}`;
+    const aliases = [...new Set([`${origin} ${destination}`, `${destination} ${origin}`])];
+    const sameName = (value: string) => normalizeSearchText(value) === normalizeSearchText(name)
+      || normalizeSearchText(value) === normalizeSearchText(`${destination} ⇔ ${origin}`);
+    const existing = products.find((product) => sameName(product.name))
+      ?? [name, ...aliases].map((query) => findClosestProduct(products, query, false)).find((result) => result?.kind === "match" && !result.corrected)?.product
+      ?? null;
+    let distance = "";
+    let duration = "";
+    let mapsError = false;
+    try {
+      const route = await drivingRouteDetails(origin, destination);
+      if (route) {
+        distance = formatCatalogDistance(route.distanceKm);
+        duration = formatCatalogDuration(route.minutes);
+      } else mapsError = true;
+    } catch (error) {
+      mapsError = true;
+      logger.warn({ err: error }, "Route draft: Google Maps lookup failed");
+    }
+    res.json({
+      name, aliases, priceMatrix: draft.priceMatrix, distance, duration, level: draft.level, waitTime: draft.waitTime,
+      similarRoutes: draft.similarRoutes, exactMatch: draft.exactMatch, mapsFound: !mapsError,
+      existing: existing ? { id: existing.id, name: existing.name } : null,
+    });
   } catch (error) {
     next(error);
   }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { estimateReferenceRoute, estimatedPriceMatrix, estimatedWaitTime, formatRouteEstimate, isIntraCityRoute, parseUnlistedRoute, primaryIntercityDistance, requiresManualCatalogPrice, resolveRouteAddresses } from "./route-estimate.ts";
+import { draftFromCatalog, formatCatalogDistance, formatCatalogDuration, estimateReferenceRoute, estimatedPriceMatrix, estimatedWaitTime, formatRouteEstimate, isIntraCityRoute, parseUnlistedRoute, primaryIntercityDistance, requiresManualCatalogPrice, resolveRouteAddresses } from "./route-estimate.ts";
 import { expandCustomAbbreviations, isBuiltInAbbreviation, normalizedSearchVariants } from "./catalog-search.ts";
 import { formatBillingCalculation, parseBillingAmount } from "./billing-calculator.ts";
 
@@ -208,4 +208,32 @@ test("strawberry command calculates 12% and keeps the supplied message layout", 
   assert.match(message, /החיוב על הנסיעה \(12%\):\* ₪14\.4/u);
   assert.match(message, /הרווח שלך:\* ₪105\.6/u);
   assert.doesNotMatch(message, /(?:wa\.me|whatsapp\.com|https?:\/\/)/iu);
+});
+test("a new route copies prices, level and wait from catalog routes with the same prices", () => {
+  const rows = [
+    { priceMatrix: [120, 220, 180, 340, 200, 380, 220, 420], level: "גבוה 🥇", waitTime: "עד 40 דקות" },
+    { priceMatrix: [120, 220, 180, 340, 200, 380, 220, 420], level: "גבוה 🥇", waitTime: "עד 40 דקות" },
+    { priceMatrix: [120, 220, 170, 330, 190, 370, 210, 410], level: "סטנדרטי 🥈", waitTime: "עד 40 דקות" },
+    { priceMatrix: [150, 280, 220, 400, 250, 450, 270, 490], level: "גבוה 🥇", waitTime: "עד שעה" },
+  ];
+  const draft = draftFromCatalog(120, 220, rows);
+  assert.deepEqual(draft.priceMatrix, [120, 220, 180, 340, 200, 380, 220, 420]);
+  assert.equal(draft.level, "גבוה 🥇");
+  assert.equal(draft.waitTime, "עד 40 דקות");
+  assert.equal(draft.exactMatch, true);
+  assert.equal(draft.similarRoutes, 3);
+  const scaled = draftFromCatalog(130, 240, rows);
+  assert.equal(scaled.exactMatch, false);
+  assert.equal(scaled.priceMatrix[0], 130);
+  assert.equal(scaled.priceMatrix[1], 240);
+  assert.ok(scaled.priceMatrix.every((price) => price > 0));
+});
+
+test("formats catalog distance and time like the existing routes", () => {
+  assert.equal(formatCatalogDistance(17.5), "18 ק״מ");
+  assert.equal(formatCatalogDuration(23), "23 דקות");
+  assert.equal(formatCatalogDuration(60), "שעה");
+  assert.equal(formatCatalogDuration(72), "שעה ו12 דקות");
+  assert.equal(formatCatalogDuration(90), "שעה וחצי");
+  assert.equal(formatCatalogDuration(125), "שעתיים ו5 דקות");
 });

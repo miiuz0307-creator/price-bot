@@ -1,4 +1,4 @@
-type PriceRow = { priceMatrix: number[]; waitTime?: string };
+type PriceRow = { priceMatrix: number[]; waitTime?: string; level?: string };
 
 import { normalizeSearchText } from "./catalog-search";
 
@@ -225,4 +225,101 @@ export function formatRouteEstimate(
     "⚠️ המחיר אינו מדויק או מאושר: המחיר לשני כיווני הנסיעה מבוסס על אותו מרחק ייחוס ב־Google Maps; המרחק בפועל עשוי להשתנות בכיוון השני. מחיר רכב 4 מקומות חושב לפי ₪4 לק״מ ועוגל לעשרות שקלים; שאר המחירים נגזרו ממסלולים במחירון עם מחיר בסיס דומה ועוגלו גם הם. יש לאמת מחיר סופי מול מנהל.",
   ];
   return lines.join("\n");
+}
+/** Driving distance and time between two places, for filling in a new catalog route. */
+export async function drivingRouteDetails(origin: string, destination: string): Promise<{ distanceKm: number; minutes: number } | null> {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) return null;
+  const resolved = resolveRouteAddresses(origin, destination) ?? { origin, destination };
+  const response = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
+    method: "POST",
+    signal: AbortSignal.timeout(8000),
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": apiKey,
+      "X-Goog-FieldMask": "routes.distanceMeters,routes.staticDuration,routes.routeLabels",
+    },
+    body: JSON.stringify({
+      origin: { address: `${resolved.origin}, Israel` },
+      destination: { address: `${resolved.destination}, Israel` },
+      travelMode: "DRIVE",
+      routingPreference: "TRAFFIC_UNAWARE",
+      computeAlternativeRoutes: false,
+      languageCode: "he",
+      units: "METRIC",
+    }),
+  });
+  if (!response.ok) throw new Error(`Google Routes request failed (${response.status})`);
+  const data = await response.json() as { routes?: { distanceMeters?: number; staticDuration?: string; routeLabels?: string[] }[] };
+  const route = data.routes?.find((item) => item.routeLabels?.includes("DEFAULT_ROUTE")) ?? data.routes?.[0];
+  const meters = route?.distanceMeters;
+  const seconds = Number.parseFloat(route?.staticDuration ?? "");
+  if (typeof meters !== "number" || !(meters > 0) || !Number.isFinite(seconds) || seconds <= 0) return null;
+  return { distanceKm: meters / 1000, minutes: Math.max(1, Math.round(seconds / 60)) };
+}
+
+/** "18 ק״מ" — the catalog's distance format. */
+export function formatCatalogDistance(km: number): string {
+  return `${Math.max(1, Math.round(km))} ק״מ`;
+}
+
+/** "23 דקות", "שעה", "שעה ו12 דקות", "שעתיים ו5 דקות" — the catalog's time format. */
+export function formatCatalogDuration(totalMinutes: number): string {
+  const minutes = Math.max(1, Math.round(totalMinutes));
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (!hours) return `${rest} דקות`;
+  const hourText = hours === 1 ? "שעה" : hours === 2 ? "שעתיים" : `${hours} שעות`;
+  if (!rest) return hourText;
+  if (rest === 30) return `${hourText} וחצי`;
+  return `${hourText} ו${rest} דקות`;
+}
+
+function mostCommon(values: (string | undefined)[]): string {
+  const counts = new Map<string, number>();
+  for (const value of values) {
+    const text = value?.trim();
+    if (text) counts.set(text, (counts.get(text) ?? 0) + 1);
+  }
+  return [...counts].sort((left, right) => right[1] - left[1])[0]?.[0] ?? "";
+}
+
+/**
+ * Prices and details of a new route from its regular price (4 seats) and, optionally,
+ * its round-trip price — copied from catalog routes with the same prices, so a new
+ * route matches the rest of the catalog. Routes with exactly these prices decide;
+ * otherwise the other vehicle prices are scaled from the routes with the nearest price.
+ */
+export function draftFromCatalog(base: number, roundTrip: number | null, products: PriceRow[]) {
+  const valid = products.filter((row) => row.priceMatrix.length === 8 && row.priceMatrix.every((price) => Number.isFinite(price) && price > 0));
+  const sameBase = valid.filter((row) => row.priceMatrix[0] === base);
+  const exact = roundTrip ? sameBase.filter((row) => row.priceMatrix[1] === roundTrip) : sameBase;
+  let priceMatrix: number[];
+  let similar: PriceRow[];
+  if (exact.length) {
+    similar = exact;
+    priceMatrix = mostCommon(exact.map((row) => row.priceMatrix.join(","))).split(",").map(Number);
+  } else {
+    similar = comparableRows(base, valid);
+    const roundToTen = (value: number) => Math.max(10, Math.round(value / 10 + 1e-10) * 10);
+    priceMatrix = Array.from({ length: 8 }, (_, index) => {
+      if (index === 0) return base;
+      if (index === 1 && roundTrip) return roundTrip;
+      const ratios = similar
+        .map((row) => row.priceMatrix[index] / row.priceMatrix[0])
+        .filter((ratio) => Number.isFinite(ratio) && ratio >= 0.5 && ratio <= 4)
+        .sort((a, b) => a - b);
+      if (!ratios.length) return 0;
+      const middle = Math.floor(ratios.length / 2);
+      const median = ratios.length % 2 ? ratios[middle] : (ratios[middle - 1] + ratios[middle]) / 2;
+      return roundToTen(base * median);
+    });
+  }
+  return {
+    priceMatrix,
+    level: mostCommon(similar.map((row) => row.level)),
+    waitTime: mostCommon(similar.map((row) => row.waitTime)),
+    similarRoutes: similar.length,
+    exactMatch: exact.length > 0,
+  };
 }
