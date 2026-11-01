@@ -330,7 +330,9 @@ export async function processPriceBotMessage({
     }
   } else responseText = "לבדיקת מחיר שלח/י: מ [מסלול]";
   await db.insert(priceBotLookups).values({ adminId, from, body, matched, estimate });
-  publish(["requests", "catalog"]);
+  // A price question changes requests and stats, not the routes: don't make every open
+  // website and app reload the whole catalog after each bot reply (it made typing lag).
+  publish(["requests"]);
   if (target && notifyAdmins && !matched && billingAmount === null && /^מ\s*\S/u.test(message)) {
     void notifyWorkspace(adminId, "lookups", {
       title: "בקשת מחיר חדשה",
