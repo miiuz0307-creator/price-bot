@@ -4,7 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useListProducts, type Product } from '@workspace/api-client-react';
 import { Icon } from '@/components/Icon';
-import { Chip, EmptyState, ErrorState, PageTitle, Press, Row, SearchField, Skeleton, Txt } from '@/components/ui';
+import { Button, Chip, EmptyState, ErrorState, PageTitle, Press, Row, SearchField, Skeleton, Txt } from '@/components/ui';
 import { errorMessage } from '@/lib/api';
 import { hasFullMatrix, matrixPrice, number, productMatches, shekel, vehicles } from '@/lib/format';
 import { useSurge } from '@/lib/queries';
@@ -44,6 +44,9 @@ export default function PricesScreen() {
   const header = (
     <View style={{ gap: 14, paddingTop: insets.top + 14, paddingBottom: 6 }}>
       <PageTitle title="מחירון" subtitle={products.data ? `${number(products.data.length)} מסלולים` : ' '} />
+      {can('catalog.edit') ? (
+        <Button title="מסלול חדש — מוצא, יעד ומחיר" icon="plus" variant="soft" size="md" onPress={() => router.push('/product/edit')} />
+      ) : null}
       <SearchField value={query} onChangeText={setQuery} placeholder="חיפוש: בב ים, אופקים…" autoFocus={params.focus === '1'} />
       <Row gap={8}>
         <Chip label="הכול" selected={filter === 'all'} onPress={() => setFilter('all')} />
