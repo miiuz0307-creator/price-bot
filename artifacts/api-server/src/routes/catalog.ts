@@ -133,9 +133,12 @@ router.post("/products/draft", requirePermission("catalog.edit"), async (req, re
     const aliases = [...new Set([`${origin} ${destination}`, `${destination} ${origin}`])];
     const sameName = (value: string) => normalizeSearchText(value) === normalizeSearchText(name)
       || normalizeSearchText(value) === normalizeSearchText(`${destination} ⇔ ${origin}`);
-    const existing = products.find((product) => sameName(product.name))
-      ?? [name, ...aliases].map((query) => findClosestProduct(products, query, false)).find((result) => result?.kind === "match" && !result.corrected)?.product
-      ?? null;
+    let existing = products.find((product) => sameName(product.name)) ?? null;
+    for (const query of [name, ...aliases]) {
+      if (existing) break;
+      const result = findClosestProduct(products, query, false);
+      if (result?.kind === "match" && !result.corrected) existing = result.product;
+    }
     let distance = "";
     let duration = "";
     let mapsError = false;
