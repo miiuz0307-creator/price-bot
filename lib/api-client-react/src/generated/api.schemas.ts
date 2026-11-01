@@ -113,6 +113,36 @@ export interface ProductInput {
   active?: boolean;
 }
 
+export interface ProductDraftInput {
+  /** @minLength 1 */
+  origin: string;
+  /** @minLength 1 */
+  destination: string;
+  /** @minimum 1 */
+  price: number;
+  /** @nullable */
+  roundTripPrice?: number | null;
+}
+
+export interface ProductDraftExisting {
+  id: number;
+  name: string;
+}
+
+export interface ProductDraft {
+  name: string;
+  aliases: string[];
+  priceMatrix: number[];
+  distance: string;
+  duration: string;
+  level: string;
+  waitTime: string;
+  similarRoutes: number;
+  exactMatch: boolean;
+  mapsFound: boolean;
+  existing: ProductDraftExisting | null;
+}
+
 export interface ProductUpdate {
   subtitle?: string;
   notes?: string;

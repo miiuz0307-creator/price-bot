@@ -109,6 +109,39 @@ export const CreateProductResponse = zod.object({
 
 
 /**
+ * @summary Fill in a new route (prices, distance, time) from origin, destination and price — nothing is saved
+ */
+
+
+
+
+
+export const DraftProductBody = zod.object({
+  "origin": zod.string().min(1),
+  "destination": zod.string().min(1),
+  "price": zod.number().min(1),
+  "roundTripPrice": zod.number().nullish()
+})
+
+export const DraftProductResponse = zod.object({
+  "name": zod.string(),
+  "aliases": zod.array(zod.string()),
+  "priceMatrix": zod.array(zod.number()),
+  "distance": zod.string(),
+  "duration": zod.string(),
+  "level": zod.string(),
+  "waitTime": zod.string(),
+  "similarRoutes": zod.int(),
+  "exactMatch": zod.boolean(),
+  "mapsFound": zod.boolean(),
+  "existing": zod.union([zod.object({
+  "id": zod.int(),
+  "name": zod.string()
+}),zod.null()])
+})
+
+
+/**
  * @summary Update a product price
  */
 export const UpdateProductParams = zod.object({

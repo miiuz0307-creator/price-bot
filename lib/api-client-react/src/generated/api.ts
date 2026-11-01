@@ -42,6 +42,8 @@ import type {
   OwnerCodeBootstrapInput,
   PinLoginInput,
   Product,
+  ProductDraft,
+  ProductDraftInput,
   ProductInput,
   ProductUpdate,
   PushDevice,
@@ -313,6 +315,77 @@ export const useCreateProduct = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCreateProductMutationOptions(options));
+    }
+
+export const getDraftProductUrl = () => {
+
+
+
+
+  return `/api/products/draft`
+}
+
+/**
+ * @summary Fill in a new route (prices, distance, time) from origin, destination and price — nothing is saved
+ */
+export const draftProduct = async (productDraftInput: ProductDraftInput, options?: Parameters<typeof customFetch>[1]): Promise<ProductDraft> => {
+
+  return customFetch<ProductDraft>(getDraftProductUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(productDraftInput)
+  }
+);}
+
+
+
+
+
+export const getDraftProductMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof draftProduct>>, TError,{data: BodyType<ProductDraftInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof draftProduct>>, TError,{data: BodyType<ProductDraftInput>}, TContext> => {
+
+const mutationKey = ['draftProduct'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof draftProduct>>, {data: BodyType<ProductDraftInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  draftProduct(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DraftProductMutationResult = NonNullable<Awaited<ReturnType<typeof draftProduct>>>
+    export type DraftProductMutationBody = BodyType<ProductDraftInput>
+    export type DraftProductMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Fill in a new route (prices, distance, time) from origin, destination and price — nothing is saved
+ */
+export const useDraftProduct = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof draftProduct>>, TError,{data: BodyType<ProductDraftInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof draftProduct>>,
+        TError,
+        {data: BodyType<ProductDraftInput>},
+        TContext
+      > => {
+      return useMutation(getDraftProductMutationOptions(options));
     }
 
 export const getUpdateProductUrl = (id: number,) => {
