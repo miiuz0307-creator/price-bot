@@ -1,4 +1,5 @@
 import express, { Router, type IRouter } from "express";
+import { eq } from "drizzle-orm";
 import { db, priceBotAbbreviations, priceBotProducts, type PriceSection } from "@workspace/db";
 import { findClosestProduct } from "../bot/search";
 import { expandCustomAbbreviations, normalizedSearchVariants } from "../services/catalog-search";
@@ -10,7 +11,9 @@ import { logger } from "../lib/logger";
  * Catalog maintenance from GitHub Actions (main branch, GitHub OIDC — same proof as
  * publishing app updates). "check" is read-only: which routes the bot already answers.
  * "import" only ADDS routes that the bot does not answer yet; it never changes or
- * deletes existing ones.
+ * deletes existing ones. "update" fills in text details (distance, time, price level,
+ * wait, subtitle, notes) of a route found by its exact name; prices, aliases and the
+ * route itself are never touched, and fields that are not sent stay as they are.
  */
 export const maintenanceRouter: IRouter = Router();
 maintenanceRouter.use(express.json({ limit: "5mb" }));
@@ -78,6 +81,32 @@ maintenanceRouter.post("/catalog/import", async (req, res, next) => {
     }
     logger.info({ created: created.length, skipped: skipped.length }, "Catalog import from maintenance");
     res.json({ created, skipped });
+  } catch (error) {
+    next(error);
+  }
+});
+
+type RouteDetails = { name: string; distance?: string; duration?: string; level?: string; waitTime?: string; subtitle?: string; notes?: string };
+
+maintenanceRouter.post("/catalog/update", async (req, res, next) => {
+  try {
+    const routes = (req.body?.routes ?? []) as RouteDetails[];
+    const updated: string[] = [];
+    const notFound: string[] = [];
+    for (const route of routes.slice(0, 200)) {
+      const name = route.name?.trim();
+      if (!name) continue;
+      const fields: Partial<Record<"distance" | "duration" | "level" | "waitTime" | "subtitle" | "notes", string>> = {};
+      for (const field of ["distance", "duration", "level", "waitTime", "subtitle", "notes"] as const) {
+        const value = route[field];
+        if (typeof value === "string") fields[field] = stripProductLinks({ [field]: value.trim() })[field];
+      }
+      if (!Object.keys(fields).length) continue;
+      const rows = await db.update(priceBotProducts).set(fields).where(eq(priceBotProducts.name, name)).returning({ name: priceBotProducts.name });
+      if (rows.length) updated.push(name); else notFound.push(name);
+    }
+    logger.info({ updated: updated.length, notFound: notFound.length }, "Catalog details update from maintenance");
+    res.json({ updated, notFound });
   } catch (error) {
     next(error);
   }
