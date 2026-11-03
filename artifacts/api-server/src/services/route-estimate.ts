@@ -237,7 +237,7 @@ export async function drivingRouteDetails(origin: string, destination: string): 
     headers: {
       "Content-Type": "application/json",
       "X-Goog-Api-Key": apiKey,
-      "X-Goog-FieldMask": "routes.distanceMeters,routes.staticDuration,routes.routeLabels",
+      "X-Goog-FieldMask": "routes.distanceMeters,routes.staticDuration,routes.routeLabels,geocodingResults",
     },
     body: JSON.stringify({
       origin: { address: `${resolved.origin}, Israel` },
@@ -250,7 +250,15 @@ export async function drivingRouteDetails(origin: string, destination: string): 
     }),
   });
   if (!response.ok) throw new Error(`Google Routes request failed (${response.status})`);
-  const data = await response.json() as { routes?: { distanceMeters?: number; staticDuration?: string; routeLabels?: string[] }[] };
+  const data = await response.json() as {
+    routes?: { distanceMeters?: number; staticDuration?: string; routeLabels?: string[] }[];
+    geocodingResults?: { origin?: RouteGeocoding; destination?: RouteGeocoding };
+  };
+  // "פת" is also a Jerusalem neighborhood: never give a city route the distance of a
+  // neighborhood or street Google picked instead of the town.
+  const neighborhoodOnly = (place?: RouteGeocoding) => !!place?.type?.length && !place.type.includes("locality")
+    && place.type.some((type) => type === "neighborhood" || type.startsWith("sublocality") || type === "route" || type === "street_address");
+  if (neighborhoodOnly(data.geocodingResults?.origin) || neighborhoodOnly(data.geocodingResults?.destination)) return null;
   const route = data.routes?.find((item) => item.routeLabels?.includes("DEFAULT_ROUTE")) ?? data.routes?.[0];
   const meters = route?.distanceMeters;
   const seconds = Number.parseFloat(route?.staticDuration ?? "");

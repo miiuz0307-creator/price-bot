@@ -2,7 +2,8 @@ import express, { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, priceBotAbbreviations, priceBotProducts, type PriceSection } from "@workspace/db";
 import { findClosestProduct } from "../bot/search";
-import { expandCustomAbbreviations, normalizedSearchVariants } from "../services/catalog-search";
+import { expandCustomAbbreviations, expandPlaceName, normalizedSearchVariants } from "../services/catalog-search";
+import { drivingRouteDetails, formatCatalogDistance, formatCatalogDuration } from "../services/route-estimate";
 import { tokenOk } from "../services/app-updates";
 import { stripProductLinks } from "../lib/strip-links";
 import { logger } from "../lib/logger";
@@ -86,7 +87,7 @@ maintenanceRouter.post("/catalog/import", async (req, res, next) => {
   }
 });
 
-type RouteDetails = { name: string; distance?: string; duration?: string; level?: string; waitTime?: string; subtitle?: string; notes?: string };
+type RouteDetails = { name: string; fromMaps?: boolean; distance?: string; duration?: string; level?: string; waitTime?: string; subtitle?: string; notes?: string };
 
 maintenanceRouter.post("/catalog/update", async (req, res, next) => {
   try {
@@ -101,7 +102,17 @@ maintenanceRouter.post("/catalog/update", async (req, res, next) => {
         const value = route[field];
         if (typeof value === "string") fields[field] = stripProductLinks({ [field]: value.trim() })[field];
       }
-      if (!Object.keys(fields).length) continue;
+      if (route.fromMaps) {
+        // Distance and time again from Google Maps, by the full town names of the route.
+        const abbreviations = await db.select({ shortcut: priceBotAbbreviations.shortcut, expansion: priceBotAbbreviations.expansion }).from(priceBotAbbreviations);
+        const ends = name.split("⇔").map((part) => expandPlaceName(part, abbreviations));
+        const details = ends.length === 2 && ends.every(Boolean) ? await drivingRouteDetails(ends[0], ends[1]).catch(() => null) : null;
+        if (details) {
+          fields.distance = formatCatalogDistance(details.distanceKm);
+          fields.duration = formatCatalogDuration(details.minutes);
+        }
+      }
+      if (!Object.keys(fields).length) { notFound.push(`${name} (no details)`); continue; }
       const rows = await db.update(priceBotProducts).set(fields).where(eq(priceBotProducts.name, name)).returning({ name: priceBotProducts.name });
       if (rows.length) updated.push(name); else notFound.push(name);
     }

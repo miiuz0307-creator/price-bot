@@ -70,7 +70,7 @@ import {
   priceBotTargets,
 } from "@workspace/db";
 import { whatsappWeb, type IncomingWhatsAppMessage } from "../services/whatsapp-web";
-import { expandCustomAbbreviations, isBuiltInAbbreviation, normalizeSearchText, normalizedSearchVariants } from "../services/catalog-search";
+import { expandCustomAbbreviations, expandPlaceName, isBuiltInAbbreviation, normalizeSearchText, normalizedSearchVariants } from "../services/catalog-search";
 import { drivingDistanceKm, drivingRouteDetails, draftFromCatalog, formatCatalogDistance, formatCatalogDuration, estimateReferenceRoute, estimatedPriceMatrix, estimatedWaitTime, formatRouteEstimate, isIntraCityRoute, parseUnlistedRoute, requiresManualCatalogPrice, resolveRouteAddresses } from "../services/route-estimate";
 import { formatBillingCalculation, parseBillingAmount } from "../services/billing-calculator";
 import { logger } from "../lib/logger";
@@ -127,12 +127,22 @@ router.post("/products/draft", requirePermission("catalog.edit"), async (req, re
       res.status(400).json({ error: "מלאו מוצא, יעד ומחיר תקין." });
       return;
     }
-    const products = await db.select().from(priceBotProducts);
+    const [products, abbreviations] = await Promise.all([
+      db.select().from(priceBotProducts),
+      db.select({ shortcut: priceBotAbbreviations.shortcut, expansion: priceBotAbbreviations.expansion }).from(priceBotAbbreviations),
+    ]);
     const draft = draftFromCatalog(price, roundTrip, products);
-    const name = `${origin} ⇔ ${destination}`;
-    const aliases = [...new Set([`${origin} ${destination}`, `${destination} ${origin}`])];
+    // "פת" → "פתח תקווה": the route gets full place names (like the rest of the catalog),
+    // Google Maps is asked about the town, and what the manager typed stays an alias.
+    const fullOrigin = expandPlaceName(origin, abbreviations) || origin;
+    const fullDestination = expandPlaceName(destination, abbreviations) || destination;
+    const name = `${fullOrigin} ⇔ ${fullDestination}`;
+    const aliases = [...new Set([
+      `${fullOrigin} ${fullDestination}`, `${fullDestination} ${fullOrigin}`,
+      `${origin} ${destination}`, `${destination} ${origin}`,
+    ])];
     const sameName = (value: string) => normalizeSearchText(value) === normalizeSearchText(name)
-      || normalizeSearchText(value) === normalizeSearchText(`${destination} ⇔ ${origin}`);
+      || normalizeSearchText(value) === normalizeSearchText(`${fullDestination} ⇔ ${fullOrigin}`);
     let existing = products.find((product) => sameName(product.name)) ?? null;
     for (const query of [name, ...aliases]) {
       if (existing) break;
@@ -143,7 +153,7 @@ router.post("/products/draft", requirePermission("catalog.edit"), async (req, re
     let duration = "";
     let mapsError = false;
     try {
-      const route = await drivingRouteDetails(origin, destination);
+      const route = await drivingRouteDetails(fullOrigin, fullDestination);
       if (route) {
         distance = formatCatalogDistance(route.distanceKm);
         duration = formatCatalogDuration(route.minutes);

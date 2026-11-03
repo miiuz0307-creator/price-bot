@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { draftFromCatalog, formatCatalogDistance, formatCatalogDuration, estimateReferenceRoute, estimatedPriceMatrix, estimatedWaitTime, formatRouteEstimate, isIntraCityRoute, parseUnlistedRoute, primaryIntercityDistance, requiresManualCatalogPrice, resolveRouteAddresses } from "./route-estimate.ts";
-import { expandCustomAbbreviations, isBuiltInAbbreviation, normalizedSearchVariants } from "./catalog-search.ts";
+import { expandCustomAbbreviations, expandPlaceName, isBuiltInAbbreviation, normalizedSearchVariants } from "./catalog-search.ts";
 import { formatBillingCalculation, parseBillingAmount } from "./billing-calculator.ts";
 
 test("parses two single-word destinations and explicitly separated multiword destinations", () => {
@@ -236,4 +236,11 @@ test("formats catalog distance and time like the existing routes", () => {
   assert.equal(formatCatalogDuration(72), "שעה ו12 דקות");
   assert.equal(formatCatalogDuration(90), "שעה וחצי");
   assert.equal(formatCatalogDuration(125), "שעתיים ו5 דקות");
+});
+
+test("quick add uses full town names for shortcuts", () => {
+  assert.equal(expandPlaceName("פת"), "פתח תקווה");
+  assert.equal(expandPlaceName("בב"), "בני ברק");
+  assert.equal(expandPlaceName("אור יהודה"), "אור יהודה");
+  assert.equal(expandPlaceName("רג", [{ shortcut: "רג", expansion: "רמת גן" }]), "רמת גן");
 });

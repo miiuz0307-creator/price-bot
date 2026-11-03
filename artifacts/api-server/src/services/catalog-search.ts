@@ -68,6 +68,11 @@ function expandRouteAbbreviations(value: string) {
     .join(" ");
 }
 
+/** A place as the manager typed it ("פת", a custom shortcut) → its full name ("פתח תקווה"). */
+export function expandPlaceName(value: string, abbreviations: readonly { shortcut: string; expansion: string }[] = []): string {
+  return expandRouteAbbreviations(expandCustomAbbreviations(value.trim(), abbreviations)).trim();
+}
+
 export function normalizedSearchVariants(value: string) {
   // "<route> - 1": a numbered price block of a route is still that route.
   const expanded = expandRouteAbbreviations(value.replace(/\s+-\s*\d{1,2}\s*$/u, ""));
