@@ -234,3 +234,38 @@ test("a round-trip fare is the regular two-way price, not a surge", () => {
   }
   assert.equal(parseSurgeQuote("ים ספר 280", [...places, "ספר"])?.price, 280);
 });
+
+test("reads a 7-seater quote written as \"ושבע\" above a long signature with booking links", () => {
+  const message = [
+    "בב ים 500",
+    "זוג ושבע",
+    "בעל שם טוב",
+    "------------------------",
+    "*8000",
+    "👨‍💻 ישראל זדה",
+    "------------------------",
+    "👇 לחצו כאן לבקשת הנסיעה 👇",
+    "https://bot.station-management-panel.com/r/31SD-9I-7494",
+    "",
+    "⛔ המספר הזה רק מפרסם – מבקשים רק בקישור 👆",
+    "ריידר הפצה בקבוצות",
+    "▬▬▬▬▬▬▬▬▬",
+    "📲 טלריידר – הטלגרם של הנהגים",
+    "| כשר · משודרג · מאובטח · להורדה: https://bot.station-management-panel.com/telerider/",
+    "▬▬▬▬▬▬▬▬▬",
+    "🏆 קבוצת ריידר בטלגרם – כל הנסיעות במקום אחד",
+    "❌ אל תישארו בחוץ – הצטרפו עכשיו: https://t.me/rider_group",
+    "▬▬▬▬▬▬▬▬▬",
+    "📲 טלריידר – הטלגרם של הנהגים",
+    "| כשר · משודרג · מאובטח · להורדה: https://bot.station-management-panel.com/telerider/",
+    "🏆 קבוצת ריידר בטלגרם – כל הנסיעות במקום אחד",
+    "❌ אל תישארו בחוץ – הצטרפו עכשיו: https://t.me/rider_group",
+  ].join("\n");
+  assert.deepEqual(parseSurgeQuote(message, places), {
+    origin: "בב", destination: "ים", price: 500, vehicleType: "sienna", extraPassenger: false,
+  });
+  // "באר שבע" and a time are not a 7-seater.
+  assert.equal(parseSurgeQuote("בב באר שבע 300", ["בב", "באר שבע"])?.vehicleType, "regular");
+  assert.equal(parseSurgeQuote("בב ים 300\nיציאה בשעה שבע", places)?.vehicleType, "regular");
+  assert.equal(parseSurgeQuote("בב ים 300\nשבע וחצי", places)?.vehicleType, "regular");
+});

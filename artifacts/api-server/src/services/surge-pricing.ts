@@ -87,9 +87,20 @@ export function parseSurgeQuote(body: string, knownPlaces: readonly string[]) {
   if (body.length > 20_000) return null;
   // Group signatures often contain WhatsApp links with "?text=" and hundreds of
   // invisible direction marks. Neither is part of the actual price quote.
-  const message = body
+  const cleaned = body
     .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/gu, "")
-    .replace(/(?:https?:\/\/)?(?:www\.)?(?:wa\.me|api\.whatsapp\.com|chat\.whatsapp\.com)\/[^\s]+/giu, " ");
+    .replace(/(?:https?:\/\/)?(?:www\.)?(?:wa\.me|api\.whatsapp\.com|chat\.whatsapp\.com)\/[^\s]+/giu, " ")
+    // Any other link (a booking page, a Telegram group) is signature, not the quote.
+    .replace(/(?:https?:\/\/|www\.)[^\s]+|(?:t\.me|bit\.ly)\/[^\s]+/giu, " ");
+  // A dispatcher's signature starts after a divider line ("-------", "▬▬▬"); the quote
+  // is above it. Long signatures made the whole message too long to be read.
+  const dividerAt = cleaned.search(/^\s*[-—–_=─━▬*~.]{5,}\s*$/mu);
+  // Only when nothing below the divider could be another fare (a second ride must still
+  // make the message ambiguous).
+  const fareLike = (text: string) => [...text.matchAll(/(?<![\d:/\-])([1-9]\d{1,3})(?![\d:/\-])/gu)]
+    .some((match) => Number(match[1]) >= 50 && Number(match[1]) <= 5000);
+  const message = dividerAt > 0 && fareLike(cleaned.slice(0, dividerAt)) && !fareLike(cleaned.slice(dividerAt))
+    ? cleaned.slice(0, dividerAt) : cleaned;
   const lines = message.split(/\r?\n/u).map((part) => part.trim()).filter(Boolean);
   if (!lines.length || message.length > 800) return null;
   // Do not turn a request for a ride into a price offer.
@@ -101,7 +112,12 @@ export function parseSurgeQuote(body: string, knownPlaces: readonly string[]) {
   const smallSix = /6\s*מק(?:ומות)?['׳״]?\s*קטן/u.test(message);
   const small = smallSix || /(?:^|[^\p{L}\p{N}])(?:מיניק|מיני)(?=$|[^\p{L}\p{N}])/u.test(message);
   const roomy = /(?:^|[^\p{L}\p{N}])מרווח(?=$|[^\p{L}\p{N}])/u.test(message);
-  const sienna = /(?:^|[^\p{L}\p{N}])(?:סיינה|סייאנה|סיאנה|7\s*מק(?:ומות)?)(?=$|[^\p{L}\p{N}])/u.test(message);
+  // "שבע" / "ושבע" is how dispatchers write a 7-seater ("זוג ושבע") — but not in "באר שבע".
+  const sienna = /(?:^|[^\p{L}\p{N}])(?:סיינה|סייאנה|סיאנה|7\s*מק(?:ומות)?)(?=$|[^\p{L}\p{N}])/u.test(message)
+    || /(?:^|[^\p{L}\p{N}])ו?שבע(?=$|[^\p{L}\p{N}])/u.test(message
+      .replace(/באר[\s-]*שבע/gu, " ")
+      // "בשעה שבע", "שבע וחצי", "שבע בבוקר" is a time, not a vehicle.
+      .replace(/(?:שעה\s+|ב)שבע|שבע(?=\s*(?:וחצי|ורבע|בבוקר|בערב|בלילה|דקות|שעות))/gu, " "));
   if (/(?:^|[^\p{L}\p{N}])(?:מיניוואן|מיניבוס|סטיישן|אוטובוס)(?=$|[^\p{L}\p{N}])/u.test(message)
     || (/6\s*מק(?:ומות)?/u.test(message) && !small && !roomy)
     || Number(small) + Number(roomy) + Number(sienna) > 1) return null;
