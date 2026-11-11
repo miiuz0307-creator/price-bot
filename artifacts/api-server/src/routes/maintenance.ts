@@ -2,7 +2,7 @@ import express, { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, priceBotAbbreviations, priceBotProducts, type PriceSection } from "@workspace/db";
 import { findClosestProduct } from "../bot/search";
-import { expandCustomAbbreviations, expandPlaceName, normalizedSearchVariants } from "../services/catalog-search";
+import { expandCustomAbbreviations, expandPlaceName, normalizeSearchText, normalizedSearchVariants } from "../services/catalog-search";
 import { drivingRouteDetails, formatCatalogDistance, formatCatalogDuration } from "../services/route-estimate";
 import { tokenOk } from "../services/app-updates";
 import { stripProductLinks } from "../lib/strip-links";
@@ -14,7 +14,8 @@ import { logger } from "../lib/logger";
  * "import" only ADDS routes that the bot does not answer yet; it never changes or
  * deletes existing ones. "update" fills in text details (distance, time, price level,
  * wait, subtitle, notes) of a route found by its exact name; prices, aliases and the
- * route itself are never touched, and fields that are not sent stay as they are.
+ * route itself are never touched, and fields that are not sent stay as they are;
+ * "removeAliases" removes only the listed wrong search names of that route.
  */
 export const maintenanceRouter: IRouter = Router();
 maintenanceRouter.use(express.json({ limit: "5mb" }));
@@ -87,7 +88,7 @@ maintenanceRouter.post("/catalog/import", async (req, res, next) => {
   }
 });
 
-type RouteDetails = { name: string; fromMaps?: boolean; distance?: string; duration?: string; level?: string; waitTime?: string; subtitle?: string; notes?: string };
+type RouteDetails = { name: string; fromMaps?: boolean; removeAliases?: string[]; distance?: string; duration?: string; level?: string; waitTime?: string; subtitle?: string; notes?: string };
 
 maintenanceRouter.post("/catalog/update", async (req, res, next) => {
   try {
@@ -112,8 +113,15 @@ maintenanceRouter.post("/catalog/update", async (req, res, next) => {
           fields.duration = formatCatalogDuration(details.minutes);
         }
       }
-      if (!Object.keys(fields).length) { notFound.push(`${name} (no details)`); continue; }
-      const rows = await db.update(priceBotProducts).set(fields).where(eq(priceBotProducts.name, name)).returning({ name: priceBotProducts.name });
+      // Remove wrong search names (aliases) of this route — only the ones listed, exactly.
+      let aliases: string[] | undefined;
+      if (route.removeAliases?.length) {
+        const [current] = await db.select({ aliases: priceBotProducts.aliases }).from(priceBotProducts).where(eq(priceBotProducts.name, name));
+        const remove = new Set(route.removeAliases.map(normalizeSearchText));
+        if (current) aliases = current.aliases.filter((alias) => !remove.has(normalizeSearchText(alias)));
+      }
+      if (!Object.keys(fields).length && !aliases) { notFound.push(`${name} (no details)`); continue; }
+      const rows = await db.update(priceBotProducts).set({ ...fields, ...(aliases ? { aliases } : {}) }).where(eq(priceBotProducts.name, name)).returning({ name: priceBotProducts.name });
       if (rows.length) updated.push(name); else notFound.push(name);
     }
     logger.info({ updated: updated.length, notFound: notFound.length }, "Catalog details update from maintenance");
