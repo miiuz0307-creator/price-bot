@@ -26,7 +26,7 @@ jobs:
           ACTION: ${{ inputs.action }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          case "$ACTION" in check|import|update) ;; *) echo "::error::unknown action"; exit 1;; esac
+          case "$ACTION" in check|import|update|surge) ;; *) echo "::error::unknown action"; exit 1;; esac
           TOKEN=$(curl -sf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=price-bot-updates" | jq -r .value)
           URL=$(node -p "require('./artifacts/price-bot-mobile/app.json').expo.updates.url.replace('/api/app-updates/manifest','')")
           mkdir -p $RUNNER_TEMP/out

@@ -1,6 +1,7 @@
 import express, { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
-import { db, priceBotAbbreviations, priceBotProducts, type PriceSection } from "@workspace/db";
+import { desc, eq } from "drizzle-orm";
+import { db, priceBotAbbreviations, priceBotProducts, priceBotSurgeOffers, priceBotSurgeSettings, type PriceSection } from "@workspace/db";
+import { whatsappWeb } from "../services/whatsapp-web";
 import { findClosestProduct } from "../bot/search";
 import { expandCustomAbbreviations, expandPlaceName, normalizeSearchText, normalizedSearchVariants } from "../services/catalog-search";
 import { drivingRouteDetails, formatCatalogDistance, formatCatalogDuration } from "../services/route-estimate";
@@ -126,6 +127,29 @@ maintenanceRouter.post("/catalog/update", async (req, res, next) => {
     }
     logger.info({ updated: updated.length, notFound: notFound.length }, "Catalog details update from maintenance");
     res.json({ updated, notFound });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Read-only: is surge monitoring on, which groups it reads, and the latest quotes it took.
+maintenanceRouter.post("/catalog/surge", async (_req, res, next) => {
+  try {
+    const settings = await db.select().from(priceBotSurgeSettings);
+    const result = [];
+    for (const row of settings) {
+      const groups = await whatsappWeb.listGroups(row.adminId).catch(() => []);
+      const label = new Map(groups.map((group) => [group.identifier, group.label]));
+      const offers = await db.select().from(priceBotSurgeOffers).where(eq(priceBotSurgeOffers.adminId, row.adminId))
+        .orderBy(desc(priceBotSurgeOffers.observedAt)).limit(15);
+      result.push({
+        adminId: row.adminId, active: row.active, startedAt: row.startedAt,
+        selectedGroups: row.groupIdentifiers.map((id) => label.get(id) ?? `${id} (not in bot's groups)`),
+        otherGroups: groups.filter((group) => !row.groupIdentifiers.includes(group.identifier)).map((group) => group.label),
+        latestQuotes: offers.map((offer) => ({ route: offer.quotedRoute, price: offer.price, vehicle: offer.vehicleType, group: label.get(offer.groupIdentifier) ?? offer.groupIdentifier, observedAt: offer.observedAt, expiresAt: offer.expiresAt })),
+      });
+    }
+    res.json({ settings: result });
   } catch (error) {
     next(error);
   }

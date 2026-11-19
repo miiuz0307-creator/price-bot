@@ -122,14 +122,31 @@ async function workspaceMembers(adminId: number) {
     .where(and(eq(priceBotAdmins.active, true), or(eq(priceBotAdmins.id, adminId), eq(priceBotAdmins.whatsappOwnerId, adminId))));
 }
 
+// Why a group message with a price was not taken as a surge quote — logged at most once
+// per group and reason every 30 minutes, so a missing surge price can be explained.
+const surgeSkipLoggedAt = new Map<string, number>();
+function logSurgeSkip(adminId: number, chatId: string, reason: string, extra: Record<string, unknown> = {}) {
+  const key = `${adminId}:${chatId}:${reason}`;
+  const now = Date.now();
+  if (now - (surgeSkipLoggedAt.get(key) ?? 0) < 30 * 60_000) return;
+  surgeSkipLoggedAt.set(key, now);
+  if (surgeSkipLoggedAt.size > 2000) surgeSkipLoggedAt.clear();
+  logger.info({ adminId, chatId, reason, ...extra }, "Surge message ignored");
+}
+
 export async function captureSurgeQuote({ adminId, chatId, body, isGroup, sentAt }: IncomingWhatsAppMessage) {
   // The quote parser only accepts two-to-four-digit prices. Avoid a database
   // lookup for ordinary group chatter and price requests without an amount.
   if (!isGroup || !Number.isFinite(sentAt) || !/[1-9]\d{1,3}/u.test(body)) return;
   const [settings] = await db.select().from(priceBotSurgeSettings).where(eq(priceBotSurgeSettings.adminId, adminId));
   const timestamp = sentAt!;
-  if (!settings?.active || !settings.groupIdentifiers.includes(chatId) || timestamp < settings.startedAt.getTime()
-    || timestamp < Date.now() - 5 * 60_000 || timestamp > Date.now() + 2 * 60_000) return;
+  if (!settings?.active) { logSurgeSkip(adminId, chatId, "surge monitoring is off"); return; }
+  if (!settings.groupIdentifiers.includes(chatId)) { logSurgeSkip(adminId, chatId, "group not selected for surge"); return; }
+  if (timestamp < settings.startedAt.getTime()
+    || timestamp < Date.now() - 5 * 60_000 || timestamp > Date.now() + 2 * 60_000) {
+    logSurgeSkip(adminId, chatId, "message time out of range", { ageMs: Date.now() - timestamp });
+    return;
+  }
   const [products, abbreviations] = await Promise.all([
     db.select().from(priceBotProducts).where(eq(priceBotProducts.active, true)),
     db.select({ shortcut: priceBotAbbreviations.shortcut, expansion: priceBotAbbreviations.expansion }).from(priceBotAbbreviations),
@@ -140,7 +157,10 @@ export async function captureSurgeQuote({ adminId, chatId, body, isGroup, sentAt
     const directionKey = surgeDirectionKey(quote, abbreviations);
     return product?.currency === "ILS" && directionKey ? [{ quote, product, directionKey }] : [];
   });
-  if (!matchedQuotes.length) return;
+  if (!matchedQuotes.length) {
+    logSurgeSkip(adminId, chatId, "no route and price understood", { text: body.replace(/\s+/gu, " ").slice(0, 120) });
+    return;
+  }
   const observedAt = new Date(timestamp);
   const recorded = await db.transaction(async (tx) => {
     const [locked] = await tx.select().from(priceBotSurgeSettings)
@@ -164,7 +184,12 @@ export async function captureSurgeQuote({ adminId, chatId, body, isGroup, sentAt
     }
     return true;
   });
-  if (recorded) publish(["surge"]);
+  if (recorded) {
+    publish(["surge"]);
+    logger.info({ adminId, chatId, quotes: matchedQuotes.map(({ quote, product }) => ({
+      route: product.name, price: quote.price, vehicle: quote.vehicleType, aboveCatalog: isSurgeAboveCatalog(quote, product),
+    })) }, "Surge quote recorded");
+  }
   const surges = recorded ? matchedQuotes.filter(({ quote, product }) => isSurgeAboveCatalog(quote, product)) : [];
   if (surges.length) {
     const { quote } = surges[0];
